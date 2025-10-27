@@ -21,7 +21,7 @@ Examples:
   # Complete pipeline from raw VCF
   deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml
   
-  # Filter for specific gene (skips Step 1, faster!)
+  # Filter for specific gene (skips Step 1)
   deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --gene BRCA1
   
   # If you already have VEP annotations
@@ -284,7 +284,7 @@ def cmd_init_config(args):
     template = """# DeepNMD Configuration File
 # Edit this file with your specific paths and settings
 
-# Reference genome files (REQUIRED)
+# Ensembl reference files (REQUIRED)
 reference:
   gtf_file: /path/to/reference.gtf
   genome_fasta: /path/to/genome.fa
