@@ -1,0 +1,20 @@
+# Include documentation
+include README.md
+include LICENSE
+include CHANGELOG.md
+
+# Include configuration templates
+include deepnmd/*.yaml
+include deepnmd/*.yml
+
+# Include requirements
+include requirements.txt
+include pyproject.toml
+
+# Exclude development and test files
+exclude .gitignore
+exclude .github
+recursive-exclude tests *
+recursive-exclude docs *
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]

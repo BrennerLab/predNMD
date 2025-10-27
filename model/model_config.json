@@ -1,0 +1,37 @@
+{
+  "categorical_features": [
+    "50nt_rule"
+  ],
+  "continuous_features": [
+    "distance_to_stop",
+    "gc_content",
+    "CDS_position",
+    "dis_to_3utr_end",
+    "downstream_exons",
+    "phyloP",
+    "LOEUF",
+    "exon_length",
+    "dis_to_exon_end",
+    "m6A_CDS_length_normalized_unconstrained",
+    "m6A_all_length_normalized_unconstrained",
+    "downstream_inframeAUG_translationAI",
+    "PTC_translationAI",
+    "CAI_25codon_upstream_diff",
+    "AF",
+    "Mean_Expression",
+    "upstream_exons",
+    "dis_to_first_inframeAUG",
+    "dis_to_first_outframeAUG"
+  ],
+  "random_state": 42,
+  "is_scaler_fitted": true,
+  "best_params": {
+    "n_estimators": 1000,
+    "max_depth": 25,
+    "min_samples_split": 2,
+    "min_samples_leaf": 8,
+    "max_features": "sqrt",
+    "class_weight": "balanced",
+    "bootstrap": true
+}
+}

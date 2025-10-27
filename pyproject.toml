@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepnmd"
+version = "1.0.0"
+description = "A comprehensive pipeline for predicting Nonsense-Mediated Decay (NMD) in genetic variants"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+keywords = ["bioinformatics", "genomics", "NMD", "variant-annotation", "VCF"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "pandas>=1.3.0",
+    "numpy>=1.21.0",
+    "pyyaml>=5.4",
+    "pysam>=0.19.0",
+    "pyBigWig>=0.3.18",
+    "scikit-learn>=1.0.0",
+    "shap>=0.41.0",
+    "biopython>=1.79",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=3.0",
+    "black>=22.0",
+    "flake8>=4.0",
+    "mypy>=0.950",
+]
+
+[project.scripts]
+deepnmd = "deepnmd.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/deepnmd"
+Documentation = "https://deepnmd.readthedocs.io"
+Repository = "https://github.com/yourusername/deepnmd.git"
+"Bug Tracker" = "https://github.com/yourusername/deepnmd/issues"
+
+[tool.setuptools]
+packages = ["deepnmd", "deepnmd.modules"]
+
+[tool.setuptools.package-data]
+deepnmd = ["*.yaml", "*.yml"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
