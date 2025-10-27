@@ -232,7 +232,7 @@ options:
 
 Workflow options:
   --skip-filtering      Skip protein-coding region filtering (input already filtered)
-  --gene GENE           Filter variants to specific gene (by SYMBOL or Ensembl ID) - skips Step 1
+  --gene GENE           Filter variants to specific gene (by SYMBOL or Ensembl ID) 
   --skip-vep            Skip VCF filtering and VEP annotation (input already VEP-annotated)
   --from-features       Start from existing feature table (input is features.txt)
   --no-vcf-output       Generate predictions table only (skip VCF annotation)
