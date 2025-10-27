@@ -56,17 +56,17 @@ For detailed options, run: deepnmd run -h
     # Workflow options (human-readable!)
     workflow_group = run_parser.add_argument_group('Workflow options')
     workflow_group.add_argument('--skip-filtering', action='store_true',
-                              help='Skip protein-coding region filtering (input already filtered)')
+                              help='Skip protein-coding region filtering')
     workflow_group.add_argument('--gene', type=str, metavar='GENE',
                               help='Filter variants to specific gene (by SYMBOL or Ensembl ID)')
     workflow_group.add_argument('--skip-vep', action='store_true',
                               help='Skip VCF filtering and VEP annotation (input already VEP-annotated)')
     workflow_group.add_argument('--from-features', action='store_true',
-                              help='Start from existing feature table (input is features.txt)')
+                              help='Start from existing feature table (tab-delimited)')
     workflow_group.add_argument('--no-vcf-output', action='store_true',
-                              help='Generate predictions table only (skip VCF annotation)')
+                              help='Generate predictions table only (skip adding NMD results to INFO field of the VCF)')
     workflow_group.add_argument('--only-vcf-annotation', action='store_true',
-                              help='Only add predictions to VCF (requires --predictions-file)')
+                              help='Just add NMD predictions to VCF (requires --predictions-file)')
     workflow_group.add_argument('--predictions-file', metavar='FILE',
                               help='Pre-computed predictions file (for --only-vcf-annotation)')
     
