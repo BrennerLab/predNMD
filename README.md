@@ -93,10 +93,10 @@ deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml --gene ENSG000000
 
 ## Pipeline Steps
 
-NMD runs the following steps:
+NMD runs the following steps if starting from an unannotated VCF file:
 
 1. **Filter VCF**: Keep only variants located in protein-coding regions
-2. **VEP Annotation**: Annotate variants with VEP (skippable)
+2. **VEP Annotation**: Annotate variants with VEP 
 3. **Add PTC Features**: Add features for each variant, which will be input to the Random Forest model
 4. **Add LOEUF/PhyloP**: Add LOEUF and phyloP scores to the feature table
 5. **TranslationAI**: Apply TranslationAI to get predicted TIS/TTS scores for downstream inframe AUG/PTC
