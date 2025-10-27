@@ -180,7 +180,7 @@ If directly starting from model prediction step, please provide a tab-delimited 
 **Continuous:**
 - `CDS_position`: position of PTC on the CDS region
 - `dis_to_first_inframeAUG`: distance of PTC to the first downstream inframe AUG
-- `dis_to_first_outframeAUG: distance of PTC to the first downstream out-of-frame AUG
+- `dis_to_first_outframeAUG`: distance of PTC to the first downstream out-of-frame AUG
 - `downstream_inframeAUG_translationAI`: translationAI score for the first downstream inframe AUG
 - `dis_to_exon_end`: distance of PTC to the end of the PTC-containing exon
 - `exon_length`: length of the PTC-containing exon
@@ -198,59 +198,71 @@ If directly starting from model prediction step, please provide a tab-delimited 
 - `m6A_CDS_length_normalized_unconstrained`: m6A counts between CDS start and PTC normalized by region length
 - `m6A_all_length_normalized_unconstrained`: m6A counts across the whole transcript normalized by transcript length
 
-## Examples
-
-### Example 1: Complete Analysis
-
+## All command options
 ```bash
-deepnmd -v variants.vcf -o results -c config.yaml 
+deepnmd run -h
+usage: deepnmd run [-h] -i INPUT -o OUTPUT_DIR -s SAMPLE_NAME [-c CONFIG] [--skip-filtering] [--gene GENE]
+                   [--skip-vep] [--from-features] [--no-vcf-output] [--only-vcf-annotation] [--predictions-file FILE]
+                   [--keep-all] [--keep-filtered-vcf] [--keep-features] [--gtf GTF] [--genome GENOME] [--cds CDS]
+                   [--gnomad GNOMAD] [--phylop PHYLOP] [--m6a M6A] [--expression EXPRESSION] [--vep-path VEP_PATH]
+                   [--vep-cache VEP_CACHE] [--assembly {GRCh37,GRCh38}] [--model-dir MODEL_DIR] [--threads THREADS]
+                   [--no-canonical]
+
+options:
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        Input file (VCF, VEP-annotated VCF, or feature table)
+  -o OUTPUT_DIR, --output-dir OUTPUT_DIR
+                        Output directory
+  -s SAMPLE_NAME, --sample-name SAMPLE_NAME
+                        Sample name
+  -c CONFIG, --config CONFIG
+                        Configuration YAML file
+
+Workflow options:
+  --skip-filtering      Skip protein-coding region filtering (input already filtered)
+  --gene GENE           Filter variants to specific gene (by SYMBOL or Ensembl ID) - skips Step 1
+  --skip-vep            Skip VCF filtering and VEP annotation (input already VEP-annotated)
+  --from-features       Start from existing feature table (input is features.txt)
+  --no-vcf-output       Generate predictions table only (skip VCF annotation)
+  --only-vcf-annotation
+                        Only add predictions to VCF (requires --predictions-file)
+  --predictions-file FILE
+                        Pre-computed predictions file (for --only-vcf-annotation)
+
+File retention options:
+  --keep-all            Keep all intermediate files
+  --keep-filtered-vcf   Keep protein-coding filtered VCF
+  --keep-features       Keep feature extraction outputs
+
+Reference files (override config):
+  --gtf GTF             GTF annotation file
+  --genome GENOME       Genome FASTA file
+  --cds CDS             CDS FASTA file
+
+Annotation files (override config):
+  --gnomad GNOMAD       gnomAD constraint metrics file
+  --phylop PHYLOP       phyloP bigWig file
+  --m6a M6A             m6A annotation file
+  --expression EXPRESSION
+                        Gene expression file
+
+VEP options (override config):
+  --vep-path VEP_PATH   Path to VEP executable
+  --vep-cache VEP_CACHE
+                        VEP cache directory
+  --assembly {GRCh37,GRCh38}
+                        Genome assembly
+
+Model options (override config):
+  --model-dir MODEL_DIR
+                        Directory containing Random Forest models
+
+Runtime options:
+  --threads THREADS     Number of threads
+  --no-canonical        Include non-canonical transcripts
 ```
 
-**Output:**
-```
-results/
-├── filtered_stop_gained.vcf
-├── vep_annotated.vcf (removed unless --keep-vep-vcf)
-├── ptc_features.txt
-├── features_with_loeuf_phylop.txt
-├── features_with_tai.txt
-├── complete_features.txt
-├── nmd_predictions.txt
-└── nmd_annotated.vcf
-```
-
-### Example 2: Gene-Specific Analysis
-
-```bash
-# Analyze BRCA1 variants only
-deepnmd -v patient.vcf -o brca1_results --gene BRCA1 -t 4
-
-# Multiple gene analyses
-for gene in BRCA1 BRCA2 TP53 PTEN; do
-    deepnmd -v patient.vcf -o ${gene}_analysis --gene $gene
-done
-```
-
-### Example 3: Pre-annotated VCF
-
-```bash
-# Skip VEP if already annotated
-deepnmd -v vep_annotated.vcf -o results --skip-vep
-```
-
-### Example 4: Feature Table Only
-
-```bash
-# Start from pre-computed features (step 7)
-deepnmd -f my_features.txt -o predictions
-```
-
-### Example 5: Predictions Only (No VCF Output)
-
-```bash
-# Get prediction table without annotating VCF
-deepnmd -v input.vcf -o results --no-vcf-output
-```
 
 ## Interpretation Guide
 
@@ -259,7 +271,7 @@ deepnmd -v input.vcf -o results --no-vcf-output
 **N_terminal (N-terminal rescue):**
 - Variant creates stop codon early in transcript
 - Downstream in-frame AUG allows reinitiation
-- Produces truncated but potentially functional protein
+- Produces truncated protein missing N-terminus
 
 **C_terminal (C-terminal rescue):**
 - Variant follows 50-nucleotide rule (>50nt from last exon junction)
@@ -276,93 +288,23 @@ SHAP values explain each prediction:
 - **Positive values**: Push toward NMD escape
 - **Negative values**: Push toward NMD trigger
 - **Magnitude**: Importance of contribution
-
-### Probability Interpretation
-
-- `nmd_escape_probability > 0.5`: Predicted to escape NMD
-- `n_terminal_probability > c_terminal_probability`: N-terminal mechanism more likely
-- Higher probabilities indicate higher confidence
-
-## Troubleshooting
-
-### Common Issues
-
-**1. Gene not found**
-```
-Error: No variants found for gene 'BRCA1'
-```
-- Check gene name spelling
-- Verify gene has stop_gained variants in VCF
-- Try Ensembl ID instead of symbol
-
-**2. VEP annotation required**
-```
-Error: Gene filtering requires VEP annotation
-```
-- Run without `--skip-vep`, or
-- Pre-annotate VCF with VEP manually
-
-**3. Missing features**
-```
-Warning: Missing features: ['phyloP', 'LOEUF']
-```
-- Check config.yaml paths
-- Ensure annotation files are in correct format
-
-**4. Feature table with gene filter**
-```
-Error: Gene filtering requires VCF input
-```
-- Cannot use `--gene` with `--features`
-- Filter VCF first, then extract features
-
-### Getting Help
-
-```bash
-# Show help
-deepnmd --help
-
-# Enable verbose logging
-deepnmd -v input.vcf -o output --verbose
-
-# Save log to file
-deepnmd -v input.vcf -o output --log-file analysis.log
-```
+  
 
 ## Citation
 
-If you use DeepNMD in your research, please cite:
+If you use NMD in your research, please cite:
 
 ```
-[Your paper citation here]
+[Paper citation here TODO]
 ```
 
 ## License
 
 MIT License - see LICENSE file for details
 
-## Contributing
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
 
 ## Contact
 
-- Issues: [GitHub Issues](https://github.com/yourusername/deepnmd/issues)
-- Email: your.email@institution.edu
+- Issues: [GitHub Issues](https://github.com/yaqisu/NMD/issues)
+- Email: yaqisu@berkeley.edu
 
-## Changelog
-
-### Version 1.1.0 (2025-10-23)
-- Added `--gene` option for gene-specific analysis
-- Fixed step numbering (feature table now correctly starts at step 7)
-- Improved error messages for gene filtering
-- Added gene symbol and Ensembl ID support
-
-### Version 1.0.0 (2025-10-15)
-- Initial release
-- Complete VCF-to-prediction pipeline
-- SHAP-based mechanism classification
-- Multi-threaded processing
