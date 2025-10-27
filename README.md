@@ -3,47 +3,66 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-DeepNMD is a comprehensive Python package for predicting Nonsense-Mediated Decay (NMD) escape mechanisms from genetic variants. It uses Random Forest models with SHAP analysis to classify variants as N-terminal or C-terminal rescue mechanisms.
-
-## Features
-
-- **Complete Pipeline**: From VCF to predictions in one command
-- **Gene Filtering**: Analyze variants in specific genes of interest
-- **Flexible Input**: Start from VCF or pre-computed feature tables
-- **SHAP Analysis**: Interpretable predictions with mechanism classification
-- **VEP Integration**: Automated VEP annotation (or use pre-annotated VCF)
-- **Multi-threaded**: Parallel processing for faster analysis
+**NMD(Name TBD)** is a comprehensive Python package for predicting if given nonsense or frameshift variants would trigger NMD. It uses a Random Forest model trained from various data sources, and for those variants predicted to not trigger NMD, the software can further predict if the variant would lead to N- or C-terminal truncated protein utilizing SHAP analysis.
 
 ## Installation
 
-### Prerequisites
-
-- Python 3.8 or higher
-- VEP (Variant Effect Predictor) installed and configured
-- Reference genome (GRCh38)
-
-### Install DeepNMD
+### Install NMD
 
 ```bash
-# Install from PyPI (when published)
-pip install deepnmd
+#It’s highly recommended to start a fresh environment to avoid potential dependency conflicts
+conda create -n NMD python=3.10 
+conda activate NMD
 
-# Or install from source
-git clone https://github.com/yourusername/deepnmd.git
-cd deepnmd
-pip install -e .
+git clone https://github.com/yaqisu/NMD.git
+cd NMD
+pip install .
 ```
 
-### Required Data Files
+### Download required Data Files
 
 DeepNMD requires several annotation files. Download and configure paths in `config.yaml`:
 
-1. LOEUF scores
-2. PhyloP conservation scores
-3. m6A modification data
-4. Gene expression data
-5. Reference genome (FASTA)
-6. Pre-trained Random Forest model
+1. LOEUF scores (can be downloaded with download_data.py)
+2. PhyloP conservation scores (can be downloaded with download_data.py)
+3. m6A modification data (already included in /data)
+4. Gene expression data (already included in /data)
+5. Ensembl reference genome (FASTA), reference GTF, and reference cDNA (FASTA)
+6. Pre-trained Random Forest model (already included in /model)
+
+```bash
+# Download the gnomAD constraint metric (LOEUF scores) and phyloP conservation scores
+python download_data.py
+
+# You can also specify which dataset you want to download, e.g., 
+python download_data.py --datasets gnomad phylop-hg38
+
+# To see what datasets are available for download:
+python download_data.py --list
+```
+
+### Install TranslationAI (should be installed after NMD has been installed)
+
+```bash
+git clone https://github.com/rnasys/TranslationAI.git
+cd TranslationAI
+python setup.py install
+pip install tensorflow #TranslationAI dependency
+```
+
+### (Optional) The following stand-alone tools are only required if your input is raw VCF without VEP annotation, while unnecessary if your input is VEP annotated file: 
+
+1. bedtools
+```bash
+conda install bioconda::bedtools
+```
+
+2. bcftools
+```bash
+conda install bioconda::bcftools
+```
+
+3. VEP: please refer to [VEP documentation](http://useast.ensembl.org/info/docs/tools/vep/script/vep_download.html) for guidance of downloading and installing VEP
 
 ## Quick Start
 
