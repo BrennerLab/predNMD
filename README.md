@@ -231,13 +231,13 @@ options:
                         Configuration YAML file
 
 Workflow options:
-  --skip-filtering      Skip protein-coding region filtering (input already filtered)
+  --skip-filtering      Skip protein-coding region filtering step
   --gene GENE           Filter variants to specific gene (by SYMBOL or Ensembl ID) 
   --skip-vep            Skip VCF filtering and VEP annotation (input already VEP-annotated)
-  --from-features       Start from existing feature table (input is features.txt)
-  --no-vcf-output       Generate predictions table only (skip VCF annotation)
+  --from-features       Start from existing feature table (tab-delimited)
+  --no-vcf-output       Generate predictions table only (skip adding NMD results to INFO field of the VCF)
   --only-vcf-annotation
-                        Only add predictions to VCF (requires --predictions-file)
+                        Just add NMD predictions to VCF (requires --predictions-file)
   --predictions-file FILE
                         Pre-computed predictions file (for --only-vcf-annotation)
 
