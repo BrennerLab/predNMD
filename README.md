@@ -64,66 +64,52 @@ conda install bioconda::bcftools
 
 3. VEP: please refer to [VEP documentation](http://useast.ensembl.org/info/docs/tools/vep/script/vep_download.html) for guidance of downloading and installing VEP
 
+
 ## Quick Start
 
 ### Basic Usage
 
 ```bash
-# Run complete pipeline
-deepnmd -v input.vcf -o output_dir -c config.yaml
+# If your input VCF has not been annotated by VEP
+deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml
+# If your input is VEP annotated VCF
+deepnmd run -i vep_annotated.vcf -o output_dir -c /path/to/config.yaml --skip-vep
+# If you want to initialize a template config file
+deepnmd init-config -o config.yaml
 ```
 
 ### Gene-Specific Analysis
 
 ```bash
-# Analyze variants in BRCA1 only
-deepnmd -v input.vcf -o output_dir --gene BRCA1
+# For example, analyze variants in BRCA1 only (using gene symbol)
+deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml --gene BRCA1
 
-# Using Ensembl Gene ID
-deepnmd -v input.vcf -o output_dir --gene ENSG00000012048
+# Or you can also use Ensembl Gene ID
+deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml --gene ENSG00000012048
 ```
 
-### Advanced Usage
-
-```bash
-# Skip VEP annotation (already annotated)
-deepnmd -v annotated.vcf -o output_dir --skip-vep
-
-# Start from feature table (step 7: model prediction only)
-deepnmd -f features.txt -o output_dir
-
-# Get predictions without VCF output
-deepnmd -v input.vcf -o output_dir --no-vcf-output
-
-# Keep intermediate VEP file
-deepnmd -v input.vcf -o output_dir --keep-vep-vcf
-
-# Use multiple threads
-deepnmd -v input.vcf -o output_dir -t 8
-```
 
 ## Pipeline Steps
 
 DeepNMD runs the following steps:
 
-1. **Filter VCF**: Keep only stop_gained variants
+1. **Filter VCF**: Keep only variants located in protein-coding regions
 2. **VEP Annotation**: Annotate variants with VEP (skippable)
-3. **Extract PTC Features**: Extract premature termination codon features
+3. **Add PTC Features**: add features for each variant, which will be input to the Random Forest model
 4. **Add LOEUF/PhyloP**: Annotate with constraint and conservation scores
-5. **TranslationAI**: Calculate translation efficiency scores
-6. **Add m6A/Expression**: Annotate with modification and expression data
-7. **RF Prediction**: Apply Random Forest model with SHAP analysis (starts here if using `--features`)
-8. **Annotate VCF**: Add predictions back to VCF (optional)
+5. **TranslationAI**: Apply TranslationAI to get predicted TIS/TTS scores for downstream inframe AUG/PTC
+6. **RF Prediction**: Apply Random Forest model with SHAP analysis 
+7. **Annotate VCF**: Add prediction results (probability of triggering NMD, probability of C-terminal truncation, probability of N-terminal truncation) back to the VCF 
+
 
 ## Output Files
 
-### Predictions File (`nmd_predictions.txt`)
+### Predictions File (`{SAMPLE_NAME}.with_predictions.txt`)
 
 Tab-delimited file with the following columns:
 
-**Core Predictions:**
+**Core Prediction:**
 - `nmd_trigger_probability`: Probability of triggering NMD (0-1)
-- `nmd_escape_probability`: Probability of escaping NMD (0-1)
 
 **Mechanism Classification** (for escape cases only):
 - `mechanism_classification`: N_terminal, C_terminal, or Uncertain
@@ -135,115 +121,89 @@ Tab-delimited file with the following columns:
 - `c_terminal_escape_contrib`: Raw SHAP contribution from C-terminal features
 - `general_escape_contrib`: Raw SHAP contribution from general features
 
-**Relative Contributions:**
-- `n_terminal_escape_relative`: Relative contribution (3-way split including general)
-- `c_terminal_escape_relative`: Relative contribution (3-way split)
-- `general_escape_relative`: Relative contribution (3-way split)
-- `n_terminal_nt_ct_relative`: Relative contribution (N vs C only)
-- `c_terminal_nt_ct_relative`: Relative contribution (N vs C only)
-- `total_nt_ct_escape_score`: Combined N+C terminal escape score
 
-### Annotated VCF (`nmd_annotated.vcf`)
+### Annotated VCF (`{SAMPLE_NAME}.NMDannot.vcf`)
 
 VCF file with added INFO fields:
-- `NMD_TRIGGER_PROB`: NMD trigger probability
-- `NMD_ESCAPE_PROB`: NMD escape probability
-- `NMD_MECHANISM`: Mechanism classification (N_terminal/C_terminal/Uncertain)
-- `NMD_N_PROB`: N-terminal mechanism probability
-- `NMD_C_PROB`: C-terminal mechanism probability
+- `NMD_PROB`: NMD trigger probability
+- `N_TERMINAL_PROB`: N-terminal truncation probability
+- `C_TERMINAL_PROB`: C-terminal truncation probability
 
-## Gene Filtering
-
-The `--gene` option filters variants to a specific gene using VEP annotations:
-
-### Gene Specification
-
-You can specify genes by:
-- **Symbol**: Human-readable gene name (e.g., `BRCA1`, `TP53`)
-- **Ensembl ID**: Ensembl gene identifier (e.g., `ENSG00000012048`)
-
-### How It Works
-
-1. Filters VCF after stop_gained filtering but before further analysis
-2. Matches against both VEP `SYMBOL` and `Gene` fields
-3. Retains all transcripts for the specified gene
-4. Fails with error if no variants found for the gene
-
-### Examples
-
-```bash
-# Common cancer genes
-deepnmd -v input.vcf -o brca1_analysis --gene BRCA1
-deepnmd -v input.vcf -o tp53_analysis --gene TP53
-deepnmd -v input.vcf -o pten_analysis --gene PTEN
-
-# Using Ensembl IDs
-deepnmd -v input.vcf -o analysis --gene ENSG00000141510  # TP53
-
-# Gene filtering requires VCF input (not feature tables)
-deepnmd -f features.txt -o output --gene BRCA1  # ERROR
-
-# Combine with other options
-deepnmd -v input.vcf -o output --gene BRCA1 --skip-vep -t 4
-```
-
-### Important Notes
-
-- Gene filtering requires VEP-annotated VCF (or use with `--skip-vep` if already annotated)
-- Cannot be used with `--features` input (feature tables don't contain gene information)
-- Gene names are case-sensitive (use exact match)
-- Returns error if gene not found in VCF
 
 ## Configuration
 
 Edit `config.yaml` to set paths to required data files:
 
 ```yaml
-# Reference data files
-loeuf_file: /path/to/loeuf_scores.txt
-phylop_file: /path/to/phylop_scores.txt
-m6a_file: /path/to/m6a_annotations.txt
-expression_file: /path/to/expression_data.txt
-genome_file: /path/to/GRCh38.fa
+# Ensembl reference files (REQUIRED)
+reference:
+  gtf_file: /path/to/reference.gtf
+  genome_fasta: /path/to/genome.fa
+  cds_fasta: /path/to/cds.fa
 
-# Model directory
-model_dir: /path/to/rf_model
+# Annotation databases (REQUIRED)
+annotation:
+  gnomad_file: /path/to/gnomad.constraint_metrics.tsv
+  phylop_bigwig: /path/to/phyloP.bw
+  m6a_file: /path/to/m6A_annotations.txt
+  expression_file: /path/to/gene_expression.csv
 
-# Processing options
-threads: 4
+# VEP configuration (REQUIRED if using VEP)
+vep:
+  vep_path: /path/to/vep #path to vep executable
+  cache_dir: /path/to/.vep #path to vep cache
+  assembly: GRCh37  # or GRCh38
+
+# Machine learning model (REQUIRED)
+model:
+  model_dir: /path/to/RF_models/
+
+# Runtime settings
+runtime:
+  threads: 32
+  canonical_only: true
 ```
 
 ## Input Requirements
 
 ### VCF Input
 
-- Must contain stop_gained variants
-- Can be raw VCF (will run VEP) or VEP-annotated (use `--skip-vep`)
-- GRCh38 assembly
+- Can be either raw VCF (will run VEP) or VEP-annotated (use `--skip-vep`)
 
 ### Feature Table Input
 
-If starting from step 7 (model prediction), provide a tab-delimited file with these features:
+If directly starting from model prediction step, please provide a tab-delimited file with these features:
 
 **Categorical:**
-- `50nt_rule`: Boolean
-- `has_downstream_inframeAUG`: Boolean
+- `50nt_rule`: True if the PTC is located <50nt upstream of the last exon-exon junction, False otherwise
 
 **Continuous:**
-- `CDS_position`, `dis_to_first_inframeAUG`, `dis_to_first_outframeAUG`
-- `downstream_inframeAUG_translationAI`, `dis_to_exon_end`, `exon_length`
-- `distance_to_stop`, `downstream_exons`, `dis_to_3utr_end`
-- `CAI_25codon_upstream_diff`, `phyloP`, `upstream_exons`
-- `AF`, `gc_content`, `LOEUF`, `PTC_translationAI`
-- `Mean_Expression`, `m6A_CDS_length_normalized_unconstrained`
-- `m6A_all_length_normalized_unconstrained`
+- `CDS_position`: position of PTC on the CDS region
+- `dis_to_first_inframeAUG`: distance of PTC to the first downstream inframe AUG
+- `dis_to_first_outframeAUG: distance of PTC to the first downstream out-of-frame AUG
+- `downstream_inframeAUG_translationAI`: translationAI score for the first downstream inframe AUG
+- `dis_to_exon_end`: distance of PTC to the end of the PTC-containing exon
+- `exon_length`: length of the PTC-containing exon
+- `distance_to_stop`: distance of PTC to the normal stop codon
+- `downstream_exons`: number of exons downstream of PTC
+- `dis_to_3utr_end`: distance of PTC to the end of 3'UTR 
+- `CAI_25codon_upstream_diff`: difference between CAI (Codon Adapation Index) 25 codons upstream of PTC and normal stop codon
+- `phyloP`: phyloP score at the PTC site
+- `upstream_exons`: number of exons upstream of PTC
+- `AF`: allele frequency of the PTC-generating variant
+- `gc_content`: GC content of the transcript 
+- `LOEUF`: LOEUF score for the PTC-containing transcript
+- `PTC_translationAI`: translationAI score for the PTC
+- `Mean_Expression`: Gene mean expression taken from GTEx
+- `m6A_CDS_length_normalized_unconstrained`: m6A counts between CDS start and PTC normalized by region length
+- `m6A_all_length_normalized_unconstrained`: m6A counts across the whole transcript normalized by transcript length
 
 ## Examples
 
 ### Example 1: Complete Analysis
 
 ```bash
-deepnmd -v variants.vcf -o results -c config.yaml -t 8
+deepnmd -v variants.vcf -o results -c config.yaml 
 ```
 
 **Output:**
