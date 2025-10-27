@@ -163,7 +163,10 @@ model:
 # Runtime settings
 runtime:
   threads: 32
-  canonical_only: true # when set to True, each variant will only be assigned to one transcript (with canonical transcript being prioritized), set to False if you want to include all potential isoforms containing the variants, which means one variant could correspond to multiple transcripts.
+  canonical_only: true # when set to True, each variant will only be assigned to one transcript
+                       # (with canonical transcript being prioritized), set to False if you want
+                       # to include all potential isoforms containing the variants, which means
+                       # one variant could correspond to multiple transcripts.
 ```
 
 ## Input Requirements
