@@ -93,7 +93,7 @@ deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml --gene ENSG000000
 
 ## Pipeline Steps
 
-DeepNMD runs the following steps:
+NMD runs the following steps:
 
 1. **Filter VCF**: Keep only variants located in protein-coding regions
 2. **VEP Annotation**: Annotate variants with VEP (skippable)
