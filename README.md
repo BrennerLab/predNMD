@@ -97,8 +97,8 @@ NMD runs the following steps:
 
 1. **Filter VCF**: Keep only variants located in protein-coding regions
 2. **VEP Annotation**: Annotate variants with VEP (skippable)
-3. **Add PTC Features**: add features for each variant, which will be input to the Random Forest model
-4. **Add LOEUF/PhyloP**: Annotate with constraint and conservation scores
+3. **Add PTC Features**: Add features for each variant, which will be input to the Random Forest model
+4. **Add LOEUF/PhyloP**: Add LOEUF and phyloP scores to the feature table
 5. **TranslationAI**: Apply TranslationAI to get predicted TIS/TTS scores for downstream inframe AUG/PTC
 6. **RF Prediction**: Apply Random Forest model with SHAP analysis 
 7. **Annotate VCF**: Add prediction results (probability of triggering NMD, probability of C-terminal truncation, probability of N-terminal truncation) back to the VCF 
