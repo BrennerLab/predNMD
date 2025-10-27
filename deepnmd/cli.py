@@ -21,7 +21,7 @@ Examples:
   # Complete pipeline from raw VCF
   deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml
   
-  # Filter for specific gene (skips Step 1)
+  # Filter for specific gene 
   deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --gene BRCA1
   
   # If you already have VEP annotations
@@ -58,7 +58,7 @@ For detailed options, run: deepnmd run -h
     workflow_group.add_argument('--skip-filtering', action='store_true',
                               help='Skip protein-coding region filtering (input already filtered)')
     workflow_group.add_argument('--gene', type=str, metavar='GENE',
-                              help='Filter variants to specific gene (by SYMBOL or Ensembl ID) - skips Step 1')
+                              help='Filter variants to specific gene (by SYMBOL or Ensembl ID)')
     workflow_group.add_argument('--skip-vep', action='store_true',
                               help='Skip VCF filtering and VEP annotation (input already VEP-annotated)')
     workflow_group.add_argument('--from-features', action='store_true',
