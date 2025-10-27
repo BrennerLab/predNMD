@@ -65,6 +65,44 @@ conda install bioconda::bcftools
 3. VEP: please refer to [VEP documentation](http://useast.ensembl.org/info/docs/tools/vep/script/vep_download.html) for guidance of downloading and installing VEP
 
 
+## Configuration
+
+Edit `config.yaml` to set paths to required data files:
+
+```yaml
+# Ensembl reference files (REQUIRED)
+reference:
+  gtf_file: /path/to/reference.gtf
+  genome_fasta: /path/to/genome.fa
+  cds_fasta: /path/to/cds.fa
+
+# Annotation databases (REQUIRED)
+annotation:
+  gnomad_file: /path/to/gnomad.constraint_metrics.tsv
+  phylop_bigwig: /path/to/phyloP.bw
+  m6a_file: /path/to/m6A_annotations.txt
+  expression_file: /path/to/gene_expression.csv
+
+# VEP configuration (REQUIRED if using VEP)
+vep:
+  vep_path: /path/to/vep #path to vep executable
+  cache_dir: /path/to/.vep #path to vep cache
+  assembly: GRCh37  # or GRCh38
+
+# Machine learning model (REQUIRED)
+model:
+  model_dir: /path/to/RF_models/
+
+# Runtime settings
+runtime:
+  threads: 32
+  canonical_only: true # when set to True, each variant will only be assigned to one transcript
+                       # (with canonical transcript being prioritized), set to False if you want
+                       # to include all potential isoforms containing the variants, which means
+                       # one variant could correspond to multiple transcripts.
+```
+
+
 ## Quick Start
 
 ### Basic Usage
@@ -131,43 +169,6 @@ VCF file with added INFO fields:
 - `N_TERMINAL_PROB`: N-terminal truncation probability
 - `C_TERMINAL_PROB`: C-terminal truncation probability
 
-
-## Configuration
-
-Edit `config.yaml` to set paths to required data files:
-
-```yaml
-# Ensembl reference files (REQUIRED)
-reference:
-  gtf_file: /path/to/reference.gtf
-  genome_fasta: /path/to/genome.fa
-  cds_fasta: /path/to/cds.fa
-
-# Annotation databases (REQUIRED)
-annotation:
-  gnomad_file: /path/to/gnomad.constraint_metrics.tsv
-  phylop_bigwig: /path/to/phyloP.bw
-  m6a_file: /path/to/m6A_annotations.txt
-  expression_file: /path/to/gene_expression.csv
-
-# VEP configuration (REQUIRED if using VEP)
-vep:
-  vep_path: /path/to/vep #path to vep executable
-  cache_dir: /path/to/.vep #path to vep cache
-  assembly: GRCh37  # or GRCh38
-
-# Machine learning model (REQUIRED)
-model:
-  model_dir: /path/to/RF_models/
-
-# Runtime settings
-runtime:
-  threads: 32
-  canonical_only: true # when set to True, each variant will only be assigned to one transcript
-                       # (with canonical transcript being prioritized), set to False if you want
-                       # to include all potential isoforms containing the variants, which means
-                       # one variant could correspond to multiple transcripts.
-```
 
 ## Input Requirements
 
