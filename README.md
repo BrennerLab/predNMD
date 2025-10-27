@@ -27,7 +27,7 @@ NMD requires several annotation files. Download and configure paths in `config.y
 2. PhyloP conservation scores (can be downloaded with download_data.py)
 3. m6A modification data (already included in /data)
 4. Gene expression data (already included in /data)
-5. Ensembl reference genome (FASTA), reference GTF, and reference cDNA (FASTA)
+5. Ensembl reference genome (FASTA), reference GTF, and reference CDS (FASTA)
 6. Pre-trained Random Forest model (already included in /model)
 
 ```bash
