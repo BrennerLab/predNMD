@@ -21,13 +21,13 @@ pip install .
 
 ### Download required Data Files
 
-DeepNMD requires several annotation files. Download and configure paths in `config.yaml`:
+NMD requires several annotation files. Download and configure paths in `config.yaml`:
 
 1. LOEUF scores (can be downloaded with download_data.py)
 2. PhyloP conservation scores (can be downloaded with download_data.py)
 3. m6A modification data (already included in /data)
 4. Gene expression data (already included in /data)
-5. Ensembl reference genome (FASTA), reference GTF, and reference cDNA (FASTA)
+5. Ensembl reference genome (FASTA), reference GTF, and reference CDS (FASTA)
 6. Pre-trained Random Forest model (already included in /model)
 
 ```bash
@@ -41,7 +41,9 @@ python download_data.py --datasets gnomad phylop-hg38
 python download_data.py --list
 ```
 
-### Install TranslationAI (should be installed after NMD has been installed)
+### Install TranslationAI 
+
+**NOTE:** TranslationAI should be installed after NMD has been installed.
 
 ```bash
 git clone https://github.com/rnasys/TranslationAI.git
@@ -65,6 +67,44 @@ conda install bioconda::bcftools
 3. VEP: please refer to [VEP documentation](http://useast.ensembl.org/info/docs/tools/vep/script/vep_download.html) for guidance of downloading and installing VEP
 
 
+## Configuration
+
+Edit `config.yaml` to set paths to required data files:
+
+```yaml
+# Ensembl reference files (REQUIRED)
+reference:
+  gtf_file: /path/to/reference.gtf
+  genome_fasta: /path/to/genome.fa
+  cds_fasta: /path/to/cds.fa
+
+# Annotation databases (REQUIRED)
+annotation:
+  gnomad_file: /path/to/gnomad.constraint_metrics.tsv # can be downloaded via download_data.py
+  phylop_bigwig: /path/to/phyloP.bw # can be downloaded via download_data.py
+  m6a_file: /path/to/m6A_annotations.txt # provided at /data/hg19_m6A-Atlas_highRes_all.txt.gz or /data/hg38_m6A-Atlas_highRes_all.txt.gz
+  expression_file: /path/to/gene_expression.csv # provided at /data/GTEx_mean_expression_per_gene.csv
+
+# VEP configuration (REQUIRED if using VEP)
+vep:
+  vep_path: /path/to/vep #path to vep executable
+  cache_dir: /path/to/.vep #path to vep cache
+  assembly: GRCh37  # or GRCh38
+
+# Machine learning model (REQUIRED)
+model:
+  model_dir: /path/to/RF_models/ # provided at /model
+
+# Runtime settings
+runtime:
+  threads: 32
+  canonical_only: true # when set to True, each variant will only be assigned to one transcript
+                       # (with canonical transcript being prioritized), set to False if you want
+                       # to include all potential isoforms containing the variants, which means
+                       # one variant could correspond to multiple transcripts.
+```
+
+
 ## Quick Start
 
 ### Basic Usage
@@ -72,8 +112,13 @@ conda install bioconda::bcftools
 ```bash
 # If your input VCF has not been annotated by VEP
 deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml
+
 # If your input is VEP annotated VCF
 deepnmd run -i vep_annotated.vcf -o output_dir -c /path/to/config.yaml --skip-vep
+
+# If your input is a feature table that could be directly serve as input to the RF model
+deepnmd run -i features.txt -o output_dir -c /path/to/config.yaml --from-features
+
 # If you want to initialize a template config file
 deepnmd init-config -o config.yaml
 ```
@@ -91,12 +136,12 @@ deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml --gene ENSG000000
 
 ## Pipeline Steps
 
-DeepNMD runs the following steps:
+NMD runs the following steps if starting from an unannotated VCF file:
 
 1. **Filter VCF**: Keep only variants located in protein-coding regions
-2. **VEP Annotation**: Annotate variants with VEP (skippable)
-3. **Add PTC Features**: add features for each variant, which will be input to the Random Forest model
-4. **Add LOEUF/PhyloP**: Annotate with constraint and conservation scores
+2. **VEP Annotation**: Annotate variants with VEP 
+3. **Add PTC Features**: Add features for each variant, which will be input to the Random Forest model
+4. **Add LOEUF/PhyloP**: Add LOEUF and phyloP scores to the feature table
 5. **TranslationAI**: Apply TranslationAI to get predicted TIS/TTS scores for downstream inframe AUG/PTC
 6. **RF Prediction**: Apply Random Forest model with SHAP analysis 
 7. **Annotate VCF**: Add prediction results (probability of triggering NMD, probability of C-terminal truncation, probability of N-terminal truncation) back to the VCF 
@@ -129,40 +174,6 @@ VCF file with added INFO fields:
 - `N_TERMINAL_PROB`: N-terminal truncation probability
 - `C_TERMINAL_PROB`: C-terminal truncation probability
 
-
-## Configuration
-
-Edit `config.yaml` to set paths to required data files:
-
-```yaml
-# Ensembl reference files (REQUIRED)
-reference:
-  gtf_file: /path/to/reference.gtf
-  genome_fasta: /path/to/genome.fa
-  cds_fasta: /path/to/cds.fa
-
-# Annotation databases (REQUIRED)
-annotation:
-  gnomad_file: /path/to/gnomad.constraint_metrics.tsv
-  phylop_bigwig: /path/to/phyloP.bw
-  m6a_file: /path/to/m6A_annotations.txt
-  expression_file: /path/to/gene_expression.csv
-
-# VEP configuration (REQUIRED if using VEP)
-vep:
-  vep_path: /path/to/vep #path to vep executable
-  cache_dir: /path/to/.vep #path to vep cache
-  assembly: GRCh37  # or GRCh38
-
-# Machine learning model (REQUIRED)
-model:
-  model_dir: /path/to/RF_models/
-
-# Runtime settings
-runtime:
-  threads: 32
-  canonical_only: true
-```
 
 ## Input Requirements
 
@@ -221,7 +232,7 @@ options:
 
 Workflow options:
   --skip-filtering      Skip protein-coding region filtering (input already filtered)
-  --gene GENE           Filter variants to specific gene (by SYMBOL or Ensembl ID) - skips Step 1
+  --gene GENE           Filter variants to specific gene (by SYMBOL or Ensembl ID) 
   --skip-vep            Skip VCF filtering and VEP annotation (input already VEP-annotated)
   --from-features       Start from existing feature table (input is features.txt)
   --no-vcf-output       Generate predictions table only (skip VCF annotation)
