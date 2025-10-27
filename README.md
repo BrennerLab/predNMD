@@ -72,8 +72,10 @@ conda install bioconda::bcftools
 ```bash
 # If your input VCF has not been annotated by VEP
 deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml
+
 # If your input is VEP annotated VCF
 deepnmd run -i vep_annotated.vcf -o output_dir -c /path/to/config.yaml --skip-vep
+
 # If you want to initialize a template config file
 deepnmd init-config -o config.yaml
 ```
