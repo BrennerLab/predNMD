@@ -1,7 +1,6 @@
 # Include documentation
 include README.md
 include LICENSE
-include CHANGELOG.md
 
 # Include configuration templates
 include deepnmd/*.yaml
@@ -18,3 +17,7 @@ recursive-exclude tests *
 recursive-exclude docs *
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]
+
+# Include /data & /model
+recursive-include data *.csv *.txt.gz
+recursive-include model *.joblib *.json
