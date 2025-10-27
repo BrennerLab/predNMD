@@ -78,10 +78,10 @@ reference:
 
 # Annotation databases (REQUIRED)
 annotation:
-  gnomad_file: /path/to/gnomad.constraint_metrics.tsv
-  phylop_bigwig: /path/to/phyloP.bw
-  m6a_file: /path/to/m6A_annotations.txt
-  expression_file: /path/to/gene_expression.csv
+  gnomad_file: /path/to/gnomad.constraint_metrics.tsv # can be downloaded via download_data.py
+  phylop_bigwig: /path/to/phyloP.bw # can be downloaded via download_data.py
+  m6a_file: /path/to/m6A_annotations.txt # provided at /data/hg19_m6A-Atlas_highRes_all.txt.gz or /data/hg38_m6A-Atlas_highRes_all.txt.gz
+  expression_file: /path/to/gene_expression.csv # provided at /data/GTEx_mean_expression_per_gene.csv
 
 # VEP configuration (REQUIRED if using VEP)
 vep:
@@ -91,7 +91,7 @@ vep:
 
 # Machine learning model (REQUIRED)
 model:
-  model_dir: /path/to/RF_models/
+  model_dir: /path/to/RF_models/ # provided at /model
 
 # Runtime settings
 runtime:
@@ -113,6 +113,9 @@ deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml
 
 # If your input is VEP annotated VCF
 deepnmd run -i vep_annotated.vcf -o output_dir -c /path/to/config.yaml --skip-vep
+
+# If your input is a feature table that could be directly serve as input to the RF model
+deepnmd run -i features.txt -o output_dir -c /path/to/config.yaml --from-features
 
 # If you want to initialize a template config file
 deepnmd init-config -o config.yaml
