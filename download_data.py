@@ -5,9 +5,6 @@ Download required datasets for deepNMD
 This script downloads large annotation files needed for deepNMD analysis.
 Run this after cloning the repository:
     python download_data.py
-
-Or install with automatic download:
-    pip install -e . --install-option="--download-data"
 """
 
 import os
