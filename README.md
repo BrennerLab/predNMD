@@ -41,7 +41,9 @@ python download_data.py --datasets gnomad phylop-hg38
 python download_data.py --list
 ```
 
-### Install TranslationAI (should be installed after NMD has been installed)
+### Install TranslationAI 
+
+**NOTE:** TranslationAI should be installed after NMD has been installed.
 
 ```bash
 git clone https://github.com/rnasys/TranslationAI.git
