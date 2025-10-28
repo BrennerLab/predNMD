@@ -4,15 +4,6 @@ PTC (Premature Termination Codon) Analyzer for VEP output - WITH CAI, m6A, DOWNS
 Analyzes variants in protein-coding regions to identify PTCs and calculate various features
 Supports multiple VEP output formats: VCF with CSQ, tab-delimited with Extra column, and standard tab-delimited
 
-NOW INCLUDES: 
-- Codon Adaptation Index (CAI) calculation for upstream sequences
-- m6A methylation site analysis within CDS and full transcript
-- m6A length-normalized features (normalized by PTC position and transcript length)
-- Downstream in-frame and out-of-frame AUG analysis (fills with 100000 when no AUG found)
-- Gene expression data from GTEx (optional)
-- Allele frequency (AF) column from gnomAD_AF, gnomADg_AF, or custom column (auto-detected or specified via --af-col)
-- Optional TranslationAI-compatible FASTA output (use --translationAI-fasta)
-  * FASTA sequences include the PTC variant AND the original natural stop codon
 """
 
 import argparse
@@ -47,14 +38,13 @@ def find_downstream_augs(modified_sequence, ptc_cds_pos):
     # Find which codon the PTC is in
     ptc_codon_start = (ptc_position // 3) * 3
     
-    # Make sure we have a complete codon
+    # Make sure it is a complete codon
     if ptc_codon_start + 2 >= len(modified_sequence):
         return None, None
     
     # Search for AUGs starting after the PTC codon
-    search_start = ptc_codon_start + 3  # Start after the stop codon
-    
-    # Make sure we don't go beyond sequence length
+    search_start = ptc_codon_start + 3  
+
     if search_start >= len(modified_sequence):
         return None, None
     
@@ -69,7 +59,7 @@ def find_downstream_augs(modified_sequence, ptc_cds_pos):
         aug_position = match.start()
         
         # Check if this AUG is in-frame relative to the original CDS
-        # In-frame: aug_position % 3 == 0 (same frame as original start codon)
+        # In-frame: aug_position % 3 == 0 
         is_inframe = (aug_position % 3) == 0
         
         if is_inframe and inframe_distance is None:
@@ -79,7 +69,7 @@ def find_downstream_augs(modified_sequence, ptc_cds_pos):
             # First out-of-frame AUG found
             outframe_distance = aug_position - ptc_codon_start
         
-        # Stop searching if we found both
+        # Stop searching if found both
         if inframe_distance is not None and outframe_distance is not None:
             break
     
@@ -220,8 +210,8 @@ class StandaloneCAICalculator:
         # Ensure sequence is multiple of 3 (complete codons only)
         remainder = len(clean_seq) % 3
         if remainder != 0:
-            clean_seq = clean_seq[:-remainder]  # Remove partial codon at end
-        
+            print(f"ERROR: Sequence length {len(clean_seq)} is not a multiple of 3.")
+            return None, 0
         codon_count = len(clean_seq) // 3
         return clean_seq if codon_count > 0 else None, codon_count
     
@@ -360,12 +350,6 @@ class TranscriptAnnotation:
             cds_seq = str(Seq(cds_seq).reverse_complement())
         
         return cds_seq
-    
-    def get_utr5_length(self):
-        """Calculate total 5' UTR length"""
-        if self.utr5:
-            return sum(end - start + 1 for start, end in self.utr5)
-        return None
     
     def get_utr3_length(self):
         """Calculate total 3' UTR length"""
@@ -584,8 +568,8 @@ def load_cds_sequences(cds_fasta_file):
             transcript_id = record.id.split()[0]
             seq = str(record.seq).upper()
             
-            # Extract stop codon (just 3 characters!)
-            natural_stop = 'TAA'  # default
+            # Extract stop codon 
+            natural_stop = ''  
             if len(seq) >= 3 and seq[-3:] in stop_codons:
                 natural_stop = seq[-3:]
                 seq = seq[:-3]
@@ -980,15 +964,7 @@ def analyze_ptc(transcript, ptc_cds_pos, variant_cds_pos, variant_length_change,
         features['dis_to_3utr_end'] = features['distance_to_stop'] + utr3_length
     else:
         features['dis_to_3utr_end'] = 'NA'
-    '''
-    utr5_length = transcript.get_utr5_length()
-    if utr5_length is not None:
-        features['dis_to_5utr_start'] = utr5_length + ptc_cds_pos
-        features['5utr_length'] = utr5_length
-    else:
-        features['dis_to_5utr_start'] = 'NA'
-        features['5utr_length'] = 'NA'
-    '''
+
     if ptc_cds_pos > variant_cds_pos:
         original_ptc_cds_pos = ptc_cds_pos - variant_length_change
     else:
@@ -1130,7 +1106,7 @@ def analyze_ptc(transcript, ptc_cds_pos, variant_cds_pos, variant_length_change,
                     cds_start_transcript = genomic_to_transcript.get(cds_start_genomic)
                 
                 if cds_start_transcript is not None:
-                    # Count m6A from CDS start to PTC (exclusive)
+                    # Count m6A from CDS start to PTC 
                     features['m6A_CDS'] = count_m6a_in_range(
                         m6a_transcript_positions, 
                         cds_start_transcript, 
@@ -1177,7 +1153,6 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
                     warnings_list=None):
     """
     Process a single VEP output line and return PTC analysis results.
-    NOW INCLUDES: CAI, m6A (with length-normalized), downstream AUG calculation, AF (if af_column specified).
     If store_sequence=True, stores modified_sequence WITH natural stop codon for TranslationAI FASTA output.
     If skip_check=True, skips PTC creation verification and directly calculates features.
     If warnings_list is provided, all validation failures are logged to it.
@@ -1357,7 +1332,7 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
         if cds_lookup_id:
             original_cds_seq = cds_sequences[cds_lookup_id]
             
-            # Get natural stop codon from dictionary (just 3 characters - very efficient!)
+            # Get natural stop codon from dictionary 
             if store_sequence and stop_codons_dict and cds_lookup_id in stop_codons_dict:
                 natural_stop_codon = stop_codons_dict[cds_lookup_id]
     
@@ -1445,7 +1420,6 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
     
     # Check for PTC creation or skip check if requested
     if skip_check:
-        # When skipping check, assume PTC is at the start of the variant's codon
         variant_codon_start = ((var_cds_pos - 1) // 3) * 3
         ptc_pos = variant_codon_start + 1  # 1-based position of the PTC
         log_warning(f"PTC check skipped (--skip-check enabled), assuming PTC at position {ptc_pos}", variant_id)
@@ -1543,7 +1517,7 @@ def write_fasta_output(results_df, fasta_file):
     
     The sequences include:
     - Modified CDS with the PTC-causing variant applied
-    - Original natural stop codon at the end (from reference)
+    - Original natural stop codon at the end 
     
     Requires 'modified_sequence' column in results_df.
     """
@@ -1600,15 +1574,6 @@ def main():
     parser = argparse.ArgumentParser(
         description='Analyze VEP output for PTCs with CAI, m6A, downstream AUG, gene expression, AF, and optional TranslationAI FASTA output (OPTIMIZED for large files)',
         epilog="""
-NEW: This version includes:
-  - Codon Adaptation Index (CAI) calculation
-  - m6A methylation site analysis (CDS and full transcript)
-  - Downstream in-frame and out-of-frame AUG analysis
-  - Gene expression data from GTEx (optional)
-  - Allele frequency (AF) from gnomAD_AF, gnomADg_AF, or custom column (use --af-col)
-  - Optional TranslationAI FASTA output (use --translationAI-fasta)
-    * FASTA sequences contain: modified CDS with PTC + original natural stop codon
-  
 Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 when no downstream AUG is found.
         """
     )
@@ -1766,7 +1731,7 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
     all_results = []
     all_warnings = []  # Collect all warnings for logging
     
-    # Determine if we need to store sequences for FASTA output
+    # Determine if need to store sequences for FASTA output
     store_sequences = args.translationAI_fasta is not None
     
     if store_sequences:
@@ -1845,175 +1810,7 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
         # Write FASTA output if requested
         if args.translationAI_fasta:
             write_fasta_output(df, args.translationAI_fasta)
-        
-        # Print statistics
-        print(f"\n{'='*70}")
-        print(f"SUMMARY STATISTICS")
-        print(f"{'='*70}")
-        
-        # AF statistics (only if present)
-        if 'AF' in df.columns:
-            af_col_name = af_column if af_column else "AF"
-            print(f"\nALLELE FREQUENCY STATISTICS (from column: {af_col_name})")
-            print(f"{'-'*70}")
-            
-            df['AF'] = pd.to_numeric(df['AF'], errors='coerce')
-            af_valid = df['AF'].notna().sum()
-            print(f"Valid AF values: {af_valid}/{len(df)} ({100*af_valid/len(df):.1f}%)")
-            
-            if af_valid > 0:
-                print(f"\nAllele Frequency:")
-                print(f"  Mean: {df['AF'].mean():.6f}")
-                print(f"  Median: {df['AF'].median():.6f}")
-                print(f"  Range: {df['AF'].min():.6f} - {df['AF'].max():.6f}")
-        
-        # CAI statistics
-        if cai_calculator is not None:
-            cai_col_suffix = f'{args.num_codons}codon'
-            ptc_col = f'CAI_{cai_col_suffix}_upstream_PTC'
-            ntc_col = f'CAI_{cai_col_suffix}_upstream_NTC'
-            diff_col = f'CAI_{cai_col_suffix}_upstream_diff'
-            
-            if ptc_col in df.columns:
-                df[ptc_col] = pd.to_numeric(df[ptc_col], errors='coerce')
-                df[ntc_col] = pd.to_numeric(df[ntc_col], errors='coerce')
-                df[diff_col] = pd.to_numeric(df[diff_col], errors='coerce')
-                
-                cai_ptc_valid = df[ptc_col].notna().sum()
-                cai_ntc_valid = df[ntc_col].notna().sum()
-                cai_diff_valid = df[diff_col].notna().sum()
-                
-                print(f"\nCAI STATISTICS")
-                print(f"{'-'*70}")
-                print(f"Valid CAI_PTC calculations: {cai_ptc_valid}/{len(df)}")
-                print(f"Valid CAI_NTC calculations: {cai_ntc_valid}/{len(df)}")
-                print(f"Valid CAI_diff calculations: {cai_diff_valid}/{len(df)}")
-                
-                if cai_ptc_valid > 0:
-                    print(f"\nCAI_PTC (upstream of Premature Termination Codon):")
-                    print(f"  Mean: {df[ptc_col].mean():.4f}")
-                    print(f"  Median: {df[ptc_col].median():.4f}")
-                    print(f"  Std: {df[ptc_col].std():.4f}")
-                    print(f"  Range: {df[ptc_col].min():.4f} - {df[ptc_col].max():.4f}")
-                
-                if cai_ntc_valid > 0:
-                    print(f"\nCAI_NTC (upstream of Natural Termination Codon):")
-                    print(f"  Mean: {df[ntc_col].mean():.4f}")
-                    print(f"  Median: {df[ntc_col].median():.4f}")
-                    print(f"  Std: {df[ntc_col].std():.4f}")
-                    print(f"  Range: {df[ntc_col].min():.4f} - {df[ntc_col].max():.4f}")
-                
-                if cai_diff_valid > 0:
-                    print(f"\nCAI_diff (CAI_NTC - CAI_PTC):")
-                    print(f"  Mean: {df[diff_col].mean():.4f}")
-                    print(f"  Median: {df[diff_col].median():.4f}")
-                    print(f"  Std: {df[diff_col].std():.4f}")
-                    print(f"  Range: {df[diff_col].min():.4f} - {df[diff_col].max():.4f}")
-        
-        # m6A statistics
-        if gene_m6a is not None:
-            print(f"\nm6A STATISTICS")
-            print(f"{'-'*70}")
-            
-            if 'm6A_CDS' in df.columns:
-                df['m6A_CDS'] = pd.to_numeric(df['m6A_CDS'], errors='coerce')
-                m6a_cds_valid = df['m6A_CDS'].notna().sum()
-                print(f"Valid m6A_CDS calculations: {m6a_cds_valid}/{len(df)}")
-                
-                if m6a_cds_valid > 0:
-                    print(f"\nm6A sites in CDS (start codon to PTC):")
-                    print(f"  Mean: {df['m6A_CDS'].mean():.2f}")
-                    print(f"  Median: {df['m6A_CDS'].median():.2f}")
-                    print(f"  Range: {df['m6A_CDS'].min():.0f} - {df['m6A_CDS'].max():.0f}")
-            
-            if 'm6A_CDS_length_normalized_unconstrained' in df.columns:
-                df['m6A_CDS_length_normalized_unconstrained'] = pd.to_numeric(df['m6A_CDS_length_normalized_unconstrained'], errors='coerce')
-                m6a_cds_norm_valid = df['m6A_CDS_length_normalized_unconstrained'].notna().sum()
-                print(f"Valid m6A_CDS_length_normalized calculations: {m6a_cds_norm_valid}/{len(df)}")
-                
-                if m6a_cds_norm_valid > 0:
-                    print(f"\nm6A sites in CDS (length-normalized by PTC position):")
-                    print(f"  Mean: {df['m6A_CDS_length_normalized_unconstrained'].mean():.6f}")
-                    print(f"  Median: {df['m6A_CDS_length_normalized_unconstrained'].median():.6f}")
-                    print(f"  Range: {df['m6A_CDS_length_normalized_unconstrained'].min():.6f} - {df['m6A_CDS_length_normalized_unconstrained'].max():.6f}")
-            
-            if 'm6A_all_transcript' in df.columns:
-                df['m6A_all_transcript'] = pd.to_numeric(df['m6A_all_transcript'], errors='coerce')
-                m6a_all_valid = df['m6A_all_transcript'].notna().sum()
-                print(f"Valid m6A_all_transcript calculations: {m6a_all_valid}/{len(df)}")
-                
-                if m6a_all_valid > 0:
-                    print(f"\nm6A sites in full transcript (5'UTR + CDS + 3'UTR):")
-                    print(f"  Mean: {df['m6A_all_transcript'].mean():.2f}")
-                    print(f"  Median: {df['m6A_all_transcript'].median():.2f}")
-                    print(f"  Range: {df['m6A_all_transcript'].min():.0f} - {df['m6A_all_transcript'].max():.0f}")
-            
-            if 'm6A_all_length_normalized_unconstrained' in df.columns:
-                df['m6A_all_length_normalized_unconstrained'] = pd.to_numeric(df['m6A_all_length_normalized_unconstrained'], errors='coerce')
-                m6a_all_norm_valid = df['m6A_all_length_normalized_unconstrained'].notna().sum()
-                print(f"Valid m6A_all_length_normalized calculations: {m6a_all_norm_valid}/{len(df)}")
-                
-                if m6a_all_norm_valid > 0:
-                    print(f"\nm6A sites in full transcript (length-normalized by transcript length):")
-                    print(f"  Mean: {df['m6A_all_length_normalized_unconstrained'].mean():.6f}")
-                    print(f"  Median: {df['m6A_all_length_normalized_unconstrained'].median():.6f}")
-                    print(f"  Range: {df['m6A_all_length_normalized_unconstrained'].min():.6f} - {df['m6A_all_length_normalized_unconstrained'].max():.6f}")
-        
-        # Downstream AUG statistics
-        print(f"\nDOWNSTREAM AUG STATISTICS")
-        print(f"{'-'*70}")
-        print(f"Note: Distance values of 100000 indicate no downstream AUG found")
-        
-        if 'has_downstream_inframeAUG' in df.columns:
-            inframe_count = df['has_downstream_inframeAUG'].sum()
-            no_inframe_count = len(df) - inframe_count
-            print(f"\nVariants with downstream in-frame AUG: {inframe_count}/{len(df)} ({100*inframe_count/len(df):.1f}%)")
-            print(f"Variants without downstream in-frame AUG: {no_inframe_count}/{len(df)} ({100*no_inframe_count/len(df):.1f}%)")
-            
-            if inframe_count > 0:
-                df['dis_to_first_inframeAUG'] = pd.to_numeric(df['dis_to_first_inframeAUG'], errors='coerce')
-                # Only calculate stats for variants that have downstream AUG (exclude 100000)
-                inframe_values = df[df['has_downstream_inframeAUG']]['dis_to_first_inframeAUG']
-                print(f"  Mean distance (when AUG present): {inframe_values.mean():.1f} nt")
-                print(f"  Median distance (when AUG present): {inframe_values.median():.1f} nt")
-                print(f"  Range (when AUG present): {inframe_values.min():.0f} - {inframe_values.max():.0f} nt")
-        
-        if 'has_downstream_outframeAUG' in df.columns:
-            outframe_count = df['has_downstream_outframeAUG'].sum()
-            no_outframe_count = len(df) - outframe_count
-            print(f"\nVariants with downstream out-of-frame AUG: {outframe_count}/{len(df)} ({100*outframe_count/len(df):.1f}%)")
-            print(f"Variants without downstream out-of-frame AUG: {no_outframe_count}/{len(df)} ({100*no_outframe_count/len(df):.1f}%)")
-            
-            if outframe_count > 0:
-                df['dis_to_first_outframeAUG'] = pd.to_numeric(df['dis_to_first_outframeAUG'], errors='coerce')
-                # Only calculate stats for variants that have downstream AUG (exclude 100000)
-                outframe_values = df[df['has_downstream_outframeAUG']]['dis_to_first_outframeAUG']
-                print(f"  Mean distance (when AUG present): {outframe_values.mean():.1f} nt")
-                print(f"  Median distance (when AUG present): {outframe_values.median():.1f} nt")
-                print(f"  Range (when AUG present): {outframe_values.min():.0f} - {outframe_values.max():.0f} nt")
-        
-        if 'has_downstream_inframeAUG' in df.columns and 'has_downstream_outframeAUG' in df.columns:
-            both_count = (df['has_downstream_inframeAUG'] & df['has_downstream_outframeAUG']).sum()
-            neither_count = (~df['has_downstream_inframeAUG'] & ~df['has_downstream_outframeAUG']).sum()
-            print(f"\nVariants with both in-frame and out-of-frame AUGs: {both_count}/{len(df)} ({100*both_count/len(df):.1f}%)")
-            print(f"Variants with no downstream AUGs: {neither_count}/{len(df)} ({100*neither_count/len(df):.1f}%)")
-        
-        # Gene expression statistics
-        if gene_expression is not None:
-            print(f"\nGENE EXPRESSION STATISTICS")
-            print(f"{'-'*70}")
-            
-            if 'Mean_Expression' in df.columns:
-                df['Mean_Expression'] = pd.to_numeric(df['Mean_Expression'], errors='coerce')
-                expr_valid = df['Mean_Expression'].notna().sum()
-                print(f"Valid expression values: {expr_valid}/{len(df)}")
-                
-                if expr_valid > 0:
-                    print(f"\nMean Expression (TPM):")
-                    print(f"  Mean: {df['Mean_Expression'].mean():.2f}")
-                    print(f"  Median: {df['Mean_Expression'].median():.2f}")
-                    print(f"  Std: {df['Mean_Expression'].std():.2f}")
-                    print(f"  Range: {df['Mean_Expression'].min():.2f} - {df['Mean_Expression'].max():.2f}")
+
     else:
         print("No PTC-introducing variants found")
     

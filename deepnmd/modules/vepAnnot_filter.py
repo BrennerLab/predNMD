@@ -54,7 +54,7 @@ def run_vep_annotation(vep_path, cache_dir, input_vcf, output_prefix, assembly='
         cache_dir: VEP cache directory
         input_vcf: Input VCF file (can be .vcf or .vcf.gz)
         output_prefix: Output prefix for files
-        assembly: Genome assembly (default: GRCh38)
+        assembly: Genome assembly 
         threads: Number of threads for VEP
         
     Returns:
@@ -100,7 +100,7 @@ def filter_vep_output(vep_file, output_file):
     """
     print("Filtering VEP output for stop_gained and frameshift variants...")
     
-    # Target consequences we want to keep
+    # Target consequences to keep
     target_consequences = {'stop_gained', 'frameshift_variant'}
     
     variants_written = 0

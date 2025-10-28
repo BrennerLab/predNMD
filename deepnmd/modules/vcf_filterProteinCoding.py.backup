@@ -4,7 +4,6 @@
 Filter VCF to keep only variants in protein-coding exons using bedtools.
 Works with both GENCODE and Ensembl GTF files or pre-made BED files.
 Use --gene to filter for a specific gene
-
 """
 
 import argparse
@@ -50,8 +49,8 @@ def extract_attribute(attributes, key):
     return None
 
 
-def is_protein_coding(attributes, gtf_source):
-    """Check if feature is protein-coding based on GTF source."""
+def is_protein_coding_gene(attributes, gtf_source):
+    """Check if a gene is protein-coding based on GTF source."""
     if gtf_source.lower() == 'gencode':
         gene_type = extract_attribute(attributes, 'gene_type')
         if not gene_type:
@@ -103,10 +102,10 @@ def create_protein_coding_bed(gtf_file, output_bed, gtf_source='auto', gene_filt
     
     print(f"Detected GTF source: {gtf_source}")
     
-    # Single pass: extract protein-coding exons directly
-    print("Extracting protein-coding exons (single pass)...")
-    protein_coding_exons = []
-    gene_found = False if gene_filter else True
+    # First pass: identify protein-coding genes (and optionally filter by gene name)
+    print("Pass 1: Identifying protein-coding genes...")
+    protein_coding_genes = set()
+    gene_found = False if gene_filter else True  # Track if gene filter matched
     
     if str(gtf_file).endswith('.gz'):
         file_handle = gzip.open(gtf_file, 'rt')
@@ -116,46 +115,27 @@ def create_protein_coding_bed(gtf_file, output_bed, gtf_source='auto', gene_filt
     try:
         for line_num, line in enumerate(file_handle, 1):
             if line_num % 100000 == 0:
-                print(f"Processed {line_num} lines...")
+                print(f"Pass 1 - Processed {line_num} lines...")
             
             parsed = parse_gtf_line(line)
-            if not parsed or parsed['feature'] != 'exon':
+            if not parsed or parsed['feature'] != 'gene':
                 continue
             
-            # Check if protein-coding (directly from exon attributes)
-            if not is_protein_coding(parsed['attributes'], gtf_source):
+            # Check if protein-coding
+            if not is_protein_coding_gene(parsed['attributes'], gtf_source):
                 continue
             
             # Check if matches gene filter (if specified)
             if gene_filter and not matches_gene_filter(parsed['attributes'], gene_filter):
                 continue
             
-            # If we got here, this is a protein-coding exon (and matches gene filter if specified)
-            if gene_filter and not gene_found:
-                gene_found = True
-                gene_name = extract_attribute(parsed['attributes'], 'gene_name')
-                gene_id = extract_attribute(parsed['attributes'], 'gene_id')
-                print(f"Found target gene: {gene_name} ({gene_id})")
-            
-            bed_start = parsed['start'] - 1  # Convert to 0-based
-            bed_end = parsed['end']
-            
-            gene_name = (extract_attribute(parsed['attributes'], 'gene_name') or
-                       extract_attribute(parsed['attributes'], 'gene_id') or
-                       'unknown')
-            transcript_id = (extract_attribute(parsed['attributes'], 'transcript_id') or
-                           'unknown')
-            exon_number = (extract_attribute(parsed['attributes'], 'exon_number') or
-                         'unknown')
-            
-            protein_coding_exons.append((
-                parsed['chrom'],
-                bed_start,
-                bed_end,
-                gene_name,
-                transcript_id,
-                exon_number
-            ))
+            gene_id = extract_attribute(parsed['attributes'], 'gene_id')
+            if gene_id:
+                protein_coding_genes.add(gene_id)
+                if gene_filter:
+                    gene_found = True
+                    gene_name = extract_attribute(parsed['attributes'], 'gene_name')
+                    print(f"Found target gene: {gene_name} ({gene_id})")
     finally:
         file_handle.close()
     
@@ -169,10 +149,52 @@ def create_protein_coding_bed(gtf_file, output_bed, gtf_source='auto', gene_filt
             f"  3. Ensure gene is protein-coding"
         )
     
-    print(f"Found {len(protein_coding_exons)} protein-coding exon(s)")
+    print(f"Found {len(protein_coding_genes)} protein-coding gene(s)")
     
-    if len(protein_coding_exons) == 0:
+    if len(protein_coding_genes) == 0:
         return 0
+    
+    # Second pass: extract exons from protein-coding genes
+    print("Pass 2: Extracting exons from protein-coding gene(s)...")
+    protein_coding_exons = []
+    
+    if str(gtf_file).endswith('.gz'):
+        file_handle = gzip.open(gtf_file, 'rt')
+    else:
+        file_handle = open(gtf_file, 'r')
+    
+    try:
+        for line_num, line in enumerate(file_handle, 1):
+            if line_num % 100000 == 0:
+                print(f"Pass 2 - Processed {line_num} lines...")
+            
+            parsed = parse_gtf_line(line)
+            if not parsed or parsed['feature'] != 'exon':
+                continue
+            
+            gene_id = extract_attribute(parsed['attributes'], 'gene_id')
+            if gene_id and gene_id in protein_coding_genes:
+                bed_start = parsed['start'] - 1  # Convert to 0-based
+                bed_end = parsed['end']
+                
+                gene_name = (extract_attribute(parsed['attributes'], 'gene_name') or
+                           extract_attribute(parsed['attributes'], 'gene_id') or
+                           'unknown')
+                transcript_id = (extract_attribute(parsed['attributes'], 'transcript_id') or
+                               'unknown')
+                exon_number = (extract_attribute(parsed['attributes'], 'exon_number') or
+                             'unknown')
+                
+                protein_coding_exons.append((
+                    parsed['chrom'],
+                    bed_start,
+                    bed_end,
+                    gene_name,
+                    transcript_id,
+                    exon_number
+                ))
+    finally:
+        file_handle.close()
     
     # Sort by chromosome and position
     def sort_key(exon):
@@ -191,57 +213,75 @@ def create_protein_coding_bed(gtf_file, output_bed, gtf_source='auto', gene_filt
         elif chrom_clean == 'M' or chrom_clean == 'MT':
             return (1, 2, start)
         else:
-            return (2, 0, start)
+            return (2, chrom_clean, start)
     
     protein_coding_exons.sort(key=sort_key)
     
     # Write BED file
-    print(f"Writing BED file to {output_bed}")
-    with open(output_bed, 'w') as f:
-        f.write(f"# Protein-coding exons from {gtf_file}\n")
+    if gene_filter:
+        print(f"Writing {len(protein_coding_exons)} exons from gene {gene_filter} to {output_bed}")
+    else:
+        print(f"Writing {len(protein_coding_exons)} protein-coding exons to {output_bed}")
+    
+    with open(output_bed, 'w') as bed_file:
         if gene_filter:
-            f.write(f"# Filtered for gene: {gene_filter}\n")
-        f.write(f"# Format: chr start end gene_name transcript_id exon_number\n")
-        
+            bed_file.write(f"# Protein-coding exons for gene {gene_filter} extracted from GTF\n")
+        else:
+            bed_file.write("# Protein-coding exons extracted from GTF\n")
+        bed_file.write("# Format: chrom start end gene_name transcript_id exon_number\n")
         for chrom, start, end, gene_name, transcript_id, exon_number in protein_coding_exons:
-            f.write(f"{chrom}\t{start}\t{end}\t{gene_name}\t{transcript_id}\t{exon_number}\n")
+            bed_file.write(f"{chrom}\t{start}\t{end}\t{gene_name}\t{transcript_id}\t{exon_number}\n")
+    
+    if gene_filter:
+        print(f"Created BED file with {len(protein_coding_exons)} exons from gene {gene_filter}")
+    else:
+        print(f"Created BED file with {len(protein_coding_exons)} protein-coding exons")
     
     return len(protein_coding_exons)
 
 
 def filter_vcf_with_bedtools(input_vcf, bed_file, output_vcf, threads=1):
-    """Filter VCF to keep only variants overlapping BED regions."""
-    print(f"Filtering {input_vcf} using bedtools intersect...")
+    """
+    Filter VCF using bedtools intersect for region filtering.
+    """
+    print(f"Filtering VCF {input_vcf} using bedtools intersect with BED file {bed_file}")
+    
+    # Check tools availability
+    try:
+        subprocess.run(['bedtools', '--version'], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise RuntimeError("bedtools not found. Please install bedtools.")
+    
+    try:
+        subprocess.run(['bcftools', '--version'], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise RuntimeError("bcftools not found. Please install bcftools.")
     
     # Determine output format
-    if output_vcf.endswith('.bcf'):
-        output_format = 'b'
-    elif output_vcf.endswith('.gz'):
+    output_format = 'v'
+    if output_vcf.endswith('.gz'):
         output_format = 'z'
-    else:
-        output_format = 'v'
+    elif output_vcf.endswith('.bcf'):
+        output_format = 'b'
     
-    # For compressed output, create uncompressed intermediate first
-    if output_format in ['z', 'b']:
-        region_filtered_vcf = output_vcf.rsplit('.', 1)[0] + '_temp.vcf'
-    else:
-        region_filtered_vcf = output_vcf
+    # Bedtools intersect for region filtering
+    print("Filtering by regions using bedtools intersect...")
     
-    # Use bedtools intersect
+    region_filtered_vcf = f"{output_vcf}.temp.vcf" if output_format != 'v' else output_vcf
+    
+    cmd = [
+        'bedtools', 'intersect',
+        '-a', input_vcf,
+        '-b', bed_file,
+        '-header',
+        '-u'
+    ]
+    
+    print(f"Running: {' '.join(cmd)} > {region_filtered_vcf}")
+    
     try:
-        # Build command - use -header to keep VCF header
-        cmd = [
-            'bedtools', 'intersect',
-            '-a', input_vcf,
-            '-b', bed_file,
-            '-header',
-            '-u'  # Report each variant in A once if it overlaps any interval in B
-        ]
-        
-        print(f"Running: {' '.join(cmd)}")
-        
         with open(region_filtered_vcf, 'w') as outfile:
-            result = subprocess.run(cmd, stdout=outfile, stderr=subprocess.PIPE, text=True, check=True)
+            subprocess.run(cmd, stdout=outfile, stderr=subprocess.PIPE, text=True, check=True)
         
         print(f"Region-filtered VCF: {region_filtered_vcf}")
         
@@ -322,7 +362,7 @@ Examples:
     input_group.add_argument('--gtf-file', help='GTF annotation file (can be gzipped)')
     input_group.add_argument('--bed-file', help='Pre-made BED file with protein-coding exons')
     
-    # Gene filtering
+    # Gene filtering (NEW!)
     parser.add_argument('--gene', 
                        help='Filter for specific gene (by gene name or Ensembl ID). '
                             'Example: --gene BRCA1 or --gene ENSG00000012048')
@@ -340,7 +380,7 @@ Examples:
     
     args = parser.parse_args()
     
-    print("=== VCF Protein-Coding Exon Filter (Simplified Single-Pass Version) ===")
+    print("=== VCF Protein-Coding Exon Filter ===")
     print(f"Input VCF: {args.input_vcf}")
     if args.gtf_file:
         print(f"GTF file: {args.gtf_file}")
@@ -385,12 +425,12 @@ Examples:
     
     try:
         if not use_existing_bed:
-            print("Step 1: Creating BED file from GTF (single-pass)...")
+            print("Step 1: Creating BED file from GTF...")
             exon_count = create_protein_coding_bed(
                 args.gtf_file, 
                 bed_file, 
                 args.gtf_source,
-                args.gene
+                args.gene  # Pass gene filter
             )
             
             if exon_count == 0:

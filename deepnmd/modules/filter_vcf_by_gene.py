@@ -2,9 +2,6 @@
 """
 Gene filtering module for deepNMD
 
-Supports two modes:
-1. CSQ mode: Filter VEP-annotated VCF using CSQ field (fast, preserves annotations)
-2. GTF mode: Filter raw VCF using GTF coordinates (for non-annotated VCFs)
 """
 
 import gzip
@@ -201,7 +198,7 @@ def filter_gene(input_vcf, gene_name, output_vcf, gtf_file=None, force_mode=None
     print(f"Gene filtering mode: {mode.upper()}")
     
     if mode == 'csq':
-        # Use CSQ field filtering (fast, preserves annotations)
+        # Use CSQ field filtering 
         variants = filter_vcf_by_csq(input_vcf, gene_name, output_vcf)
         return ('csq', variants)
     
@@ -224,13 +221,6 @@ def main():
     parser = argparse.ArgumentParser(
         description='Filter VCF for specific gene (VEP-annotated VCFs only)',
         epilog="""
-Examples:
-  # Filter VEP-annotated VCF by gene name
-  python filter_vcf_by_gene.py -i annotated.vcf -g BRCA1 -o filtered.vcf
-  
-  # Filter by Ensembl ID
-  python filter_vcf_by_gene.py -i annotated.vcf -g ENSG00000012048 -o filtered.vcf
-
 Note: For raw (non-VEP-annotated) VCFs, use vcf_filterProteinCoding.py with --gene option instead.
         """
     )

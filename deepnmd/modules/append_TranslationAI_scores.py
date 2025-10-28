@@ -158,7 +158,6 @@ def create_sequence_identifier_pattern(row):
         chr_name = f"chr{row['CHR']}"
         pos = int(float(row['POS']))
         
-        # Try both 'Strand' and 'strand' for flexibility
         strand = row.get('Strand', row.get('strand', ''))
         
         # Try multiple possible column names for transcript/feature ID

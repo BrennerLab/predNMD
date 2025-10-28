@@ -13,7 +13,7 @@ def clean_variant_data(df):
     Returns:
         pandas.DataFrame: Cleaned dataframe
     """
-    # Make a copy to avoid modifying the original
+   
     clean_df = df.copy()
     
     # Convert chromosome to string
@@ -33,7 +33,6 @@ def clean_variant_data(df):
 def get_phylop_scores(variants_df, bigwig_path):
     """
     Get phyloP scores for variants using bigWig file
-    Automatically detects SNPs vs frameshift variants and uses appropriate position
     
     Args:
         variants_df: pandas DataFrame with 'chrom', 'pos', 'ref', 'alt' columns
@@ -113,16 +112,6 @@ def add_phylop_to_file(input_file, output_file, phylop_file):
     print("Getting phyloP scores (auto-detecting SNPs vs frameshift variants)...")
     df['phyloP'] = get_phylop_scores(query_df, phylop_file)
     df['has_phylop'] = df['phyloP'].notna().astype(int)
-    
-    # Print statistics
-    total_variants = len(df)
-    missing_phylop = (~df['phyloP'].notna()).sum()
-    print(f"\nVariant Statistics:")
-    print(f"Total variants: {total_variants}")
-    print(f"Variants without phyloP: {missing_phylop} ({missing_phylop/total_variants*100:.2f}%)")
-    if 'PTC_POS' in df.columns:
-        missing_ptc = df['PTC_POS'].isna().sum()
-        print(f"Variants without PTC_POS: {missing_ptc} ({missing_ptc/total_variants*100:.2f}%)")
     
     df.to_csv(output_file, sep='\t', index=False)
     print(f"\nResults written to {output_file}")

@@ -4,8 +4,8 @@ import argparse
 def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Add LOEUF scores to variant data.')
-    parser.add_argument('--gnomad', default='/n/electric/data/yaqisu/gnomad.v4.1.constraint_metrics.tsv', 
-                        help='Path to gnomAD constraint metrics file (default: /n/electric/data/yaqisu/gnomad.v4.1.constraint_metrics.tsv) (GRCh38)')
+    parser.add_argument('--gnomad', default='gnomad.v4.1.constraint_metrics.tsv', 
+                        help='Path to gnomAD constraint metrics file (default:gnomad.v4.1.constraint_metrics.tsv) (GRCh38)')
     parser.add_argument('--input', required=True, help='Path to input variant file')
     parser.add_argument('--output', required=True, help='Path to output file')
     args = parser.parse_args()
@@ -20,12 +20,11 @@ def main():
     
     for _, row in gnomad_df.iterrows():
         transcript_id = row['transcript']
-        
-        # Some cleaning to ensure we capture the transcript ID correctly
+
         if isinstance(transcript_id, str):
             transcript_id = transcript_id.strip()
             
-            # Extract LOEUF (loss-of-function observed/expected upper bound fraction)
+            # Extract LOEUF
             if 'lof.oe_ci.upper' in row and not pd.isna(row['lof.oe_ci.upper']):
                 transcript_to_loeuf[transcript_id] = row['lof.oe_ci.upper']
     
@@ -38,7 +37,7 @@ def main():
     # Step 4: Add LOEUF column to input dataset
     print("Adding LOEUF column to dataset...")
     
-    # Identify the column containing transcript IDs (assuming 'Feature' based on original script)
+    # Identify the column containing transcript IDs 
     transcript_id_column = 'Feature'
     if transcript_id_column not in input_df.columns:
         # Try to find a column that might contain transcript IDs

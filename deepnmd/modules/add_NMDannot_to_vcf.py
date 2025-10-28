@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """
 Add NMD annotations (nmd_trigger_probability, c_terminal_probability, n_terminal_probability) 
-from a tab-delimited file into a VEP-annotated VCF file at the transcript level.
+from the tab-delimited file into the VEP-annotated VCF file at the transcript level.
 
 The script matches annotations by chromosome, position, reference allele, 
 alternate allele, and transcript ID, then appends the probability fields to each 
 transcript's CSQ entry.
-
-Version: 5.2 - Updated to include three probability fields: NMD_PROB, C_TERMINAL_PROB, N_TERMINAL_PROB
 """
 
 import sys
@@ -23,7 +21,7 @@ def normalize_transcript_id(transcript_id):
     """Normalize transcript ID by removing version number."""
     if not transcript_id:
         return transcript_id
-    # Remove version number (e.g., ENST00000600779.1 -> ENST00000600779)
+    # Remove version number 
     return transcript_id.split('.')[0]
 
 def parse_annotation_file(annotation_file, debug=False):
@@ -39,7 +37,7 @@ def parse_annotation_file(annotation_file, debug=False):
         
         if debug:
             print(f"\nAnnotation file has {len(header)} columns")
-            print(f"Header: {header[:10]}...")  # Show first 10 columns
+            print(f"Header: {header[:10]}...")  
             print(f"Transcript IDs will be normalized (version numbers removed)")
         
         # Find column indices - try different possible names
@@ -212,10 +210,9 @@ def add_annotations_to_vcf(vcf_file, annotations, output_file, debug=False):
                         for transcript_csq in csq_transcripts:
                             csq_values = transcript_csq.split('|')
                             
-                            # Get the allele from CSQ (field 0) - THE definitive source
+                            # Get the allele from CSQ (field 0) 
                             csq_allele = csq_values[0] if len(csq_values) > 0 else ''
                             
-                            # VEP uses '-' for deletions, normalize to empty string
                             if csq_allele == '-':
                                 csq_allele = ''
                             

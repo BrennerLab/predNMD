@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
 """
-NMD SHAP Analysis Script - Random Forest Version
-
 This script takes a trained Random Forest model for NMD trigger prediction and applies SHAP analysis
 to explain predictions in terms of N-terminal vs C-terminal escape mechanisms.
 
@@ -52,7 +50,7 @@ def load_model_components(model_dir):
     if not isinstance(model, RandomForestClassifier):
         raise ValueError(f"Expected RandomForestClassifier, got {type(model)}")
     
-    categorical_features = config.get('categorical_features', ['50nt_rule', 'has_downstream_inframeAUG'])
+    categorical_features = config.get('categorical_features', ['50nt_rule'])
     continuous_features = config.get('continuous_features', [])
     
     if not continuous_features and hasattr(scaler, 'feature_names_in_'):
