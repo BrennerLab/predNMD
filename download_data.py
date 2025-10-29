@@ -3,8 +3,32 @@
 Download required datasets for deepNMD
 
 This script downloads large annotation files needed for deepNMD analysis.
-Run this after cloning the repository:
+
+Features:
+- Static datasets: gnomAD constraint metrics, phyloP conservation scores
+- Dynamic Ensembl datasets: GTF annotations, CDS sequences, reference genomes
+- Flexible assembly selection: GRCh37/hg19 or GRCh38/hg38
+- Flexible Ensembl release version selection
+- Progress bars (requires tqdm)
+- MD5 checksum verification (when available)
+
+Basic usage:
+    # Download static datasets only
     python download_data.py
+    
+    # Download Ensembl files for GRCh38 (latest release)
+    python download_data.py --datasets ensembl-gtf ensembl-cds ensembl-genome
+    
+    # Download Ensembl files for GRCh37 with specific release
+    python download_data.py --datasets ensembl-all --assembly GRCh37 --ensembl-release 87
+    
+    # List all available datasets
+    python download_data.py --list
+    
+    # Download specific datasets with custom directory
+    python download_data.py --datasets gnomad ensembl-gtf --data-dir /path/to/data
+
+For more examples, run: python download_data.py --help
 """
 
 import os
@@ -13,6 +37,15 @@ import hashlib
 import urllib.request
 import argparse
 from pathlib import Path
+
+
+# Ensembl release information
+LATEST_ENSEMBL_RELEASE = 112  # Update as needed
+GRCH37_LAST_RELEASE = 87  # Last release supporting GRCh37 in main FTP
+
+# Ensembl URL templates
+ENSEMBL_BASE = 'http://ftp.ensembl.org/pub'
+ENSEMBL_GRCH37_BASE = 'http://ftp.ensembl.org/pub/grch37'
 
 
 # Define dataset URLs and metadata
@@ -39,6 +72,89 @@ DATASETS = {
         'size_mb': 9500,  # ~9.5GB
     }
 }
+
+
+def get_ensembl_assembly_name(assembly):
+    """Convert assembly identifier to Ensembl format"""
+    assembly_map = {
+        'GRCh37': 'GRCh37',
+        'hg19': 'GRCh37',
+        'grch37': 'GRCh37',
+        'GRCh38': 'GRCh38',
+        'hg38': 'GRCh38',
+        'grch38': 'GRCh38'
+    }
+    return assembly_map.get(assembly, assembly)
+
+
+def get_ensembl_gtf_info(assembly='GRCh38', release=None):
+    """Generate Ensembl GTF dataset information"""
+    assembly = get_ensembl_assembly_name(assembly)
+    
+    if release is None:
+        release = GRCH37_LAST_RELEASE if assembly == 'GRCh37' else LATEST_ENSEMBL_RELEASE
+    
+    if assembly == 'GRCh37':
+        # GRCh37 uses special URL structure
+        url = f"{ENSEMBL_GRCH37_BASE}/release-{release}/gtf/homo_sapiens/Homo_sapiens.{assembly}.{release}.gtf.gz"
+        filename = f"Homo_sapiens.{assembly}.{release}.gtf.gz"
+    else:
+        url = f"{ENSEMBL_BASE}/release-{release}/gtf/homo_sapiens/Homo_sapiens.{assembly}.{release}.gtf.gz"
+        filename = f"Homo_sapiens.{assembly}.{release}.gtf.gz"
+    
+    return {
+        'filename': filename,
+        'url': url,
+        'description': f'Ensembl {assembly} GTF annotation (release {release})',
+        'md5': None,
+        'size_mb': 50,  # Approximate
+    }
+
+
+def get_ensembl_cds_info(assembly='GRCh38', release=None):
+    """Generate Ensembl CDS FASTA dataset information"""
+    assembly = get_ensembl_assembly_name(assembly)
+    
+    if release is None:
+        release = GRCH37_LAST_RELEASE if assembly == 'GRCh37' else LATEST_ENSEMBL_RELEASE
+    
+    if assembly == 'GRCh37':
+        url = f"{ENSEMBL_GRCH37_BASE}/release-{release}/fasta/homo_sapiens/cds/Homo_sapiens.{assembly}.cds.all.fa.gz"
+        filename = f"Homo_sapiens.{assembly}.{release}.cds.all.fa.gz"
+    else:
+        url = f"{ENSEMBL_BASE}/release-{release}/fasta/homo_sapiens/cds/Homo_sapiens.{assembly}.cds.all.fa.gz"
+        filename = f"Homo_sapiens.{assembly}.{release}.cds.all.fa.gz"
+    
+    return {
+        'filename': filename,
+        'url': url,
+        'description': f'Ensembl {assembly} CDS sequences (release {release})',
+        'md5': None,
+        'size_mb': 30,  # Approximate
+    }
+
+
+def get_ensembl_genome_info(assembly='GRCh38', release=None):
+    """Generate Ensembl genome FASTA dataset information"""
+    assembly = get_ensembl_assembly_name(assembly)
+    
+    if release is None:
+        release = GRCH37_LAST_RELEASE if assembly == 'GRCh37' else LATEST_ENSEMBL_RELEASE
+    
+    if assembly == 'GRCh37':
+        url = f"{ENSEMBL_GRCH37_BASE}/release-{release}/fasta/homo_sapiens/dna/Homo_sapiens.{assembly}.dna.primary_assembly.fa.gz"
+        filename = f"Homo_sapiens.{assembly}.{release}.dna.primary_assembly.fa.gz"
+    else:
+        url = f"{ENSEMBL_BASE}/release-{release}/fasta/homo_sapiens/dna/Homo_sapiens.{assembly}.dna.primary_assembly.fa.gz"
+        filename = f"Homo_sapiens.{assembly}.{release}.dna.primary_assembly.fa.gz"
+    
+    return {
+        'filename': filename,
+        'url': url,
+        'description': f'Ensembl {assembly} reference genome (release {release})',
+        'md5': None,
+        'size_mb': 900,  # ~900 MB compressed
+    }
 
 
 try:
@@ -167,7 +283,13 @@ Examples:
   python download_data.py
   
   # Download only specific datasets
-  python download_data.py --datasets gnomad phylop
+  python download_data.py --datasets gnomad phylop-hg38
+  
+  # Download Ensembl files for GRCh38
+  python download_data.py --datasets ensembl-gtf ensembl-cds ensembl-genome --assembly GRCh38 --ensembl-release 112
+  
+  # Download Ensembl files for GRCh37
+  python download_data.py --datasets ensembl-gtf ensembl-cds --assembly GRCh37 --ensembl-release 87
   
   # Force re-download even if files exist
   python download_data.py --force
@@ -187,9 +309,24 @@ Examples:
     parser.add_argument(
         '--datasets',
         nargs='+',
-        choices=list(DATASETS.keys()),
-        default=list(DATASETS.keys()),
-        help='Specific datasets to download (default: all)'
+        choices=list(DATASETS.keys()) + ['ensembl-gtf', 'ensembl-cds', 'ensembl-genome', 'ensembl-all'],
+        default=None,
+        help='Specific datasets to download (default: static datasets only)'
+    )
+    
+    parser.add_argument(
+        '--assembly',
+        type=str,
+        default='GRCh38',
+        choices=['GRCh37', 'GRCh38', 'hg19', 'hg38'],
+        help='Genome assembly version for Ensembl files (default: GRCh38)'
+    )
+    
+    parser.add_argument(
+        '--ensembl-release',
+        type=int,
+        default=None,
+        help=f'Ensembl release version (default: {LATEST_ENSEMBL_RELEASE} for GRCh38, {GRCH37_LAST_RELEASE} for GRCh37)'
     )
     
     parser.add_argument(
@@ -206,17 +343,78 @@ Examples:
     
     args = parser.parse_args()
     
+    # Normalize assembly name
+    assembly = get_ensembl_assembly_name(args.assembly)
+    
+    # Set default release if not specified
+    if args.ensembl_release is None:
+        ensembl_release = GRCH37_LAST_RELEASE if assembly == 'GRCh37' else LATEST_ENSEMBL_RELEASE
+    else:
+        ensembl_release = args.ensembl_release
+    
+    # Build dynamic datasets dictionary
+    dynamic_datasets = {}
+    if args.datasets and any(d.startswith('ensembl-') for d in args.datasets):
+        if 'ensembl-gtf' in args.datasets or 'ensembl-all' in args.datasets:
+            dynamic_datasets['ensembl-gtf'] = get_ensembl_gtf_info(assembly, ensembl_release)
+        if 'ensembl-cds' in args.datasets or 'ensembl-all' in args.datasets:
+            dynamic_datasets['ensembl-cds'] = get_ensembl_cds_info(assembly, ensembl_release)
+        if 'ensembl-genome' in args.datasets or 'ensembl-all' in args.datasets:
+            dynamic_datasets['ensembl-genome'] = get_ensembl_genome_info(assembly, ensembl_release)
+    
+    # Merge static and dynamic datasets
+    all_datasets = {**DATASETS, **dynamic_datasets}
+    
     # List datasets and exit
     if args.list:
         print("\nAvailable datasets:")
         print("=" * 80)
+        print("\nStatic datasets:")
         for name, info in DATASETS.items():
             print(f"\n{name}:")
             print(f"  Description: {info['description']}")
             print(f"  Filename: {info['filename']}")
             print(f"  Size: ~{info['size_mb']} MB")
             print(f"  URL: {info['url']}")
+        
+        print("\n" + "=" * 80)
+        print("\nEnsembl datasets (dynamic - specify with --assembly and --ensembl-release):")
+        print("\nensembl-gtf:")
+        print(f"  Description: Ensembl GTF annotation file")
+        print(f"  Example: Homo_sapiens.GRCh38.112.gtf.gz")
+        print(f"  Size: ~50 MB")
+        print("\nensembl-cds:")
+        print(f"  Description: Ensembl CDS sequences (FASTA)")
+        print(f"  Example: Homo_sapiens.GRCh38.112.cds.all.fa.gz")
+        print(f"  Size: ~30 MB")
+        print("\nensembl-genome:")
+        print(f"  Description: Ensembl reference genome (FASTA)")
+        print(f"  Example: Homo_sapiens.GRCh38.112.dna.primary_assembly.fa.gz")
+        print(f"  Size: ~900 MB")
+        print("\nensembl-all:")
+        print(f"  Description: All Ensembl files (GTF + CDS + genome)")
+        
         return 0
+    
+    # Determine which datasets to download
+    if args.datasets is None:
+        # Default: only static datasets
+        datasets_to_download = list(DATASETS.keys())
+    else:
+        # Expand 'ensembl-all' if present
+        datasets_to_download = []
+        for d in args.datasets:
+            if d == 'ensembl-all':
+                datasets_to_download.extend(['ensembl-gtf', 'ensembl-cds', 'ensembl-genome'])
+            else:
+                datasets_to_download.append(d)
+    
+    # Filter to only available datasets
+    datasets_to_download = [d for d in datasets_to_download if d in all_datasets]
+    
+    if not datasets_to_download:
+        print("Error: No valid datasets specified")
+        return 1
     
     # Determine data directory
     if args.data_dir:
@@ -231,11 +429,17 @@ Examples:
     print("deepNMD Data Download")
     print("=" * 80)
     print(f"\nData directory: {data_dir.absolute()}")
-    print(f"Datasets to download: {', '.join(args.datasets)}")
+    print(f"Datasets to download: {', '.join(datasets_to_download)}")
+    
+    # Show Ensembl configuration if applicable
+    if any(d.startswith('ensembl-') for d in datasets_to_download):
+        print(f"\nEnsembl configuration:")
+        print(f"  Assembly: {assembly}")
+        print(f"  Release: {ensembl_release}")
     
     # Calculate total size
-    total_size = sum(DATASETS[d]['size_mb'] for d in args.datasets)
-    print(f"Total download size: ~{total_size} MB (~{total_size/1024:.1f} GB)")
+    total_size = sum(all_datasets[d]['size_mb'] for d in datasets_to_download)
+    print(f"\nTotal download size: ~{total_size} MB (~{total_size/1024:.1f} GB)")
     
     # Confirm with user
     if not args.force:
@@ -251,8 +455,8 @@ Examples:
     success_count = 0
     failed_datasets = []
     
-    for dataset_name in args.datasets:
-        dataset_info = DATASETS[dataset_name]
+    for dataset_name in datasets_to_download:
+        dataset_info = all_datasets[dataset_name]
         
         if download_dataset(dataset_name, dataset_info, data_dir, args.force):
             success_count += 1
@@ -263,18 +467,26 @@ Examples:
     print("\n" + "=" * 80)
     print("Download Summary")
     print("=" * 80)
-    print(f"Successful: {success_count}/{len(args.datasets)}")
+    print(f"Successful: {success_count}/{len(datasets_to_download)}")
     
     if failed_datasets:
         print(f"Failed: {', '.join(failed_datasets)}")
         print("\nSome downloads failed. Please check your internet connection")
         print("and try again. You can also download files manually from:")
         for dataset_name in failed_datasets:
-            print(f"  {DATASETS[dataset_name]['url']}")
+            print(f"  {all_datasets[dataset_name]['url']}")
         return 1
     else:
         print("\n✓ All datasets downloaded successfully!")
         print(f"\nData location: {data_dir.absolute()}")
+        
+        # Show filenames for Ensembl files
+        if any(d.startswith('ensembl-') for d in datasets_to_download):
+            print("\nEnsembl files downloaded:")
+            for dataset_name in datasets_to_download:
+                if dataset_name.startswith('ensembl-'):
+                    print(f"  {all_datasets[dataset_name]['filename']}")
+        
         print("\nYou can now run deepNMD with these annotation files.")
         return 0
 
