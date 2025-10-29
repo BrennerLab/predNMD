@@ -25,20 +25,17 @@ NMD requires several annotation files. Download and configure paths in `config.y
 
 1. LOEUF scores (can be downloaded with download_data.py)
 2. PhyloP conservation scores (can be downloaded with download_data.py)
-3. m6A modification data (already included in /data)
-4. Gene expression data (already included in /data)
-5. Ensembl reference genome (FASTA), reference GTF, and reference CDS (FASTA)
-6. Pre-trained Random Forest model (already included in /model)
+3. m6A modification data (included in /data)
+4. Gene expression data (included in /data)
+5. Ensembl reference genome (FASTA), reference GTF, and reference CDS (FASTA) (can be downloaded with download_data.py)
+6. Pre-trained Random Forest model (included in /model)
 
 ```bash
-# Download the gnomAD constraint metric (LOEUF scores) and phyloP conservation scores
-python download_data.py
-
-# You can also specify which dataset you want to download, e.g., 
-python download_data.py --datasets gnomad phylop-hg38
-
 # To see what datasets are available for download:
 python download_data.py --list
+
+# e.g., Download the LOEUF scores, hg38 phyloP conservation scores, and all three GRCh38 Ensembl reference files (release 104)
+python download_data.py --datasets gnomad phylop-hg38 ensembl-all --assembly GRCh38 --ensembl-release 104
 ```
 
 ### Install TranslationAI 
