@@ -73,9 +73,9 @@ Edit `config.yaml` to set paths to required data files:
 ```yaml
 # Ensembl reference files (REQUIRED)
 reference:
-  gtf_file: /path/to/reference.gtf
-  genome_fasta: /path/to/genome.fa
-  cds_fasta: /path/to/cds.fa
+  gtf_file: /path/to/reference.gtf # can be downloaded via download_data.py
+  genome_fasta: /path/to/genome.fa # can be downloaded via download_data.py
+  cds_fasta: /path/to/cds.fa # can be downloaded via download_data.py
 
 # Annotation databases (REQUIRED)
 annotation:
