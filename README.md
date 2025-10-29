@@ -67,6 +67,7 @@ conda install bioconda::bcftools
 3. VEP: please refer to [VEP documentation](http://useast.ensembl.org/info/docs/tools/vep/script/vep_download.html) for guidance of downloading and installing VEP
 
 ## Alternative option: using Docker (TODO)
+**NOTE the input must be VEP annotated file if using Docker, cause VEP (especially its cache) is too large to be included in the docker image**
 
 ## Configuration
 
