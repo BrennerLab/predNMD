@@ -56,10 +56,6 @@ setup(
             'deepnmd-download-data=download_data:main',
         ],
     },
-    cmdclass={
-        'develop': PostDevelopCommand,
-        'install': PostInstallCommand,
-    },
     python_requires='>=3.8',
     classifiers=[
         'Development Status :: 4 - Beta',

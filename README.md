@@ -1,4 +1,4 @@
-# DeepNMD: Deep Learning for NMD Escape Prediction
+# NMD(Name TBD): Machine learning method for NMD Prediction
 
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -66,6 +66,8 @@ conda install bioconda::bcftools
 
 3. VEP: please refer to [VEP documentation](http://useast.ensembl.org/info/docs/tools/vep/script/vep_download.html) for guidance of downloading and installing VEP
 
+## Alternative option: using Docker (TODO)
+**NOTE the input must be VEP annotated file if using Docker, cause VEP (especially its cache) is too large to be included in the docker image**
 
 ## Configuration
 
