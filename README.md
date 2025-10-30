@@ -154,7 +154,7 @@ runtime:
 
 ## Output Files
 
-### Predictions File (`{SAMPLE_NAME}.with_predictions.txt`)
+### Predictions File (`{OUTPUT_PREFIX}.with_predictions.txt`)
 
 Tab-delimited file with the following columns:
 **Variant Information:**
@@ -173,7 +173,7 @@ Tab-delimited file with the following columns:
 - `n_terminal_probability`: Probability of N-terminal rescue mechanism
 - `c_terminal_probability`: Probability of C-terminal rescue mechanism
 
-### Annotated VCF (`{SAMPLE_NAME}.NMDannot.vcf`)
+### Annotated VCF (`{OUTPUT_PREFIX}.NMDannot.vcf`)
 
 VCF file with added INFO fields:
 - `NMD_PROB`: NMD-trigger probability
