@@ -141,7 +141,7 @@ runtime:
   deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml --full-vcf-annotation
   ```
 
-- If you already have pre-computed featured that can directly serve as input to the RF model (please refer to [Input Requirements](https://github.com/yaqisu/NMD/edit/main/README.md#input-requirements) below for the format of the feature table), you can run predNMD with `--from-features`
+- If you already have pre-computed features that can directly serve as input to the RF model (please refer to [Input Requirements](https://github.com/yaqisu/NMD/edit/main/README.md#input-requirements) below for the format of the feature table), you can run predNMD with `--from-features`
   ```bash
   deepnmd run -i features.txt -o output_dir -c /path/to/config.yaml --from-features
   ```
