@@ -68,7 +68,7 @@ conda install bioconda::bcftools
 
 ## Configuration
 
-Edit `config.yaml` to set paths to required data files:
+Edit `config.yaml` to set paths (need to be **absolute path**, not relative path) to required data files:
 
 ```yaml
 # Ensembl reference files (REQUIRED)
