@@ -70,28 +70,42 @@ class NMDPipeline:
         Detect the type of input file
         
         Returns:
-            'raw_vcf', 'vep_annotated', or 'feature_table'
+            'raw_vcf', 'vep_vcf', 'vep_tab_extra', 'vep_tab_standard', or 'feature_table'
         """
         # Check if it's a feature table (TSV/TXT)
         if input_file.endswith('.txt') or input_file.endswith('.tsv'):
-            return 'feature_table'
+            # Check if it's actually a VEP tab-delimited file
+            try:
+                with open(input_file, 'r') as f:
+                    first_line = f.readline()
+                    # VEP tab files have specific headers
+                    if '#Uploaded_variation' in first_line or 'Uploaded_variation' in first_line:
+                        if '\tExtra' in first_line or first_line.rstrip().endswith('Extra'):
+                            return 'vep_tab_extra'
+                        else:
+                            return 'vep_tab_standard'
+                # Otherwise it's a feature table
+                return 'feature_table'
+            except:
+                return 'feature_table'
        
         else:
-            # Read first few lines to check for VEP annotation
+            # It's a VCF file (could be .vcf, .vcf.gz, etc.)
+            # Check for VEP annotation in VCF
             try:
                 if input_file.endswith('.gz'):
                     import gzip
                     with gzip.open(input_file, 'rt') as f:
                         for line in f:
                             if line.startswith('##INFO=<ID=CSQ'):
-                                return 'vep_annotated'
+                                return 'vep_vcf'
                             if not line.startswith('#'):
                                 break
                 else:
                     with open(input_file, 'r') as f:
                         for line in f:
                             if line.startswith('##INFO=<ID=CSQ'):
-                                return 'vep_annotated'
+                                return 'vep_vcf'
                             if not line.startswith('#'):
                                 break
                 return 'raw_vcf'
@@ -172,7 +186,11 @@ class NMDPipeline:
             keep_intermediate: bool = None,
             keep_files: Optional[list] = None,
             predictions_file: Optional[str] = None,
-            gene_filter: Optional[str] = None) -> Dict[str, str]:
+            gene_filter: Optional[str] = None,
+            output_features: bool = False,
+            full_vcf_annotation: bool = False,
+            skip_ptc_check: bool = False,
+            af_column: Optional[str] = None) -> Dict[str, str]:
         """
         Run the pipeline with flexible entry and exit points
         
@@ -184,6 +202,10 @@ class NMDPipeline:
             keep_files: Specific intermediate files to keep (list of step numbers)
             predictions_file: Pre-computed predictions file (for step 8 only mode)
             gene_filter: Optional gene name to filter variants (SYMBOL or Ensembl ID)
+            output_features: If True, output separate feature table with all features and SHAP values
+            full_vcf_annotation: If True, add all features and SHAP values to VCF INFO field
+            skip_ptc_check: If True, skip PTC check for SNVs (not frameshifts) in step 3
+            af_column: Specific AF column to use in step 3 (default: auto-detect)
         
         Returns:
             Dictionary with paths to output files
@@ -213,8 +235,25 @@ class NMDPipeline:
         threads = self.config.get('runtime', 'threads', default=1)
         current_file = input_file
 
-        # Detect input file type (needed for Step 8 VCF selection)
+        # Detect input file type
         input_type = self._detect_input_type(input_file)
+        self.logger.info(f"Detected input file type: {input_type}")
+        
+        # Auto-adjust start_step based on input type if starting from step 1 or 2
+        if start_step <= 2:
+            if input_type in ['vep_vcf', 'vep_tab_extra', 'vep_tab_standard']:
+                # Input is already VEP-annotated, skip VEP annotation step
+                if start_step == 1:
+                    self.logger.info("Input is VEP-annotated. Skipping protein-coding filter (Step 1) and VEP annotation (Step 2).")
+                    self.logger.info("Starting from Step 3 (feature extraction).")
+                    start_step = 3
+                elif start_step == 2:
+                    self.logger.info("Input is VEP-annotated. Skipping VEP annotation (Step 2).")
+                    self.logger.info("Starting from Step 3 (feature extraction).")
+                    start_step = 3
+            else:
+                # Raw VCF - need to go through VEP annotation
+                self.logger.info("Input is raw VCF. Will run VEP annotation in Step 2.")
         
         # Step 1: Filter VCF for protein-coding regions
         if start_step <= 1 <= end_step:
@@ -279,7 +318,7 @@ class NMDPipeline:
             gene_filtered_vcf = self.output_dir / f"{self.sample_name}.{gene_filter}.vcf"
             self.logger.info(f"Filtering variants for gene: {gene_filter}")
             
-            n_variants = filter_vcf_by_csq(str(current_file),gene_filter, str(gene_filtered_vcf))
+            n_variants = filter_vcf_by_csq(str(current_file), gene_filter, str(gene_filtered_vcf))
             
             if n_variants == 0:
                 raise ValueError(f"No variants found for gene '{gene_filter}'")
@@ -309,6 +348,16 @@ class NMDPipeline:
                 feature_args.extend(['--expression-file', self.config.get('annotation', 'expression_file')])
             if self.config.get('runtime', 'canonical_only', default=True):
                 feature_args.append('--canonical')
+            
+            # Add skip-ptc-check option if specified
+            if skip_ptc_check:
+                feature_args.append('--skip-ptc-check')
+                self.logger.info("PTC check will be skipped for SNVs (not frameshifts)")
+            
+            # Add AF column option if specified
+            if af_column:
+                feature_args.extend(['--af-col', af_column])
+                self.logger.info(f"Using AF column: {af_column}")
             
             self._run_step(
                 'check_ptc_add_features.py',
@@ -370,16 +419,27 @@ class NMDPipeline:
         # Step 7: Apply Random Forest model
         if start_step <= 7 <= end_step:
             feature_pred_txt = self.output_dir / f"{self.sample_name}.with_predictions.txt"
+            
+            rf_args = [
+                self.config.get('model', 'model_dir'),
+                current_file,
+                feature_pred_txt
+            ]
+            
+            # Add --features-output option if requested
+            if output_features:
+                features_output_txt = self.output_dir / f"{self.sample_name}.features.txt"
+                rf_args.extend(['--features-output', features_output_txt])
+                self.logger.info("Separate features table will be generated")
+            
             self._run_step(
                 'get_RF_SHAP_N-escape.py',
-                [
-                    self.config.get('model', 'model_dir'),
-                    current_file,
-                    feature_pred_txt
-                ],
+                rf_args,
                 "7. Apply Random Forest model"
             )
             outputs['predictions_txt'] = str(feature_pred_txt)
+            if output_features:
+                outputs['features_txt_output'] = str(features_output_txt)
             current_file = feature_pred_txt
         
         # Step 8: Add NMD annotation to VCF
@@ -404,26 +464,36 @@ class NMDPipeline:
                 # Use complete VEP annotated VCF from step 2
                 vcf_to_annotate = outputs['vep_annotated_vcf']
                 self.logger.info(f"Using complete VEP annotated VCF from step 2: {vcf_to_annotate}")
-            elif input_type == 'vep_annotated':
+            elif input_type in ['vep_vcf']:
                 # User provided a VEP-annotated VCF directly
                 vcf_to_annotate = input_file
                 self.logger.info(f"Using user-provided VEP annotated VCF: {vcf_to_annotate}")
-            #elif input_file.endswith('.vcf') or input_file.endswith('.vcf.gz'):
-                # Fallback to original input if it's a VCF (though it may not have VEP annotations)
-            #    vcf_to_annotate = input_file
-            #    self.logger.warning(f"Using input VCF (may not have VEP annotations): {vcf_to_annotate}")
             else:
                 self.logger.warning("Step 8 requires a VEP-annotated VCF file. Skipping VCF annotation.")
             
             if vcf_to_annotate:
                 final_vcf = self.output_dir / f"{self.sample_name}.NMDannot.vcf"
+                
+                vcf_args = [
+                    '-v', vcf_to_annotate,
+                    '-a', predictions_to_use,
+                    '-o', final_vcf
+                ]
+                
+                # Add --full-annotation flag if requested
+                if full_vcf_annotation:
+                    vcf_args.append('--full-annotation')
+                    # If we have separate features file, use it instead
+                    if output_features and 'features_txt_output' in outputs:
+                        # We need to merge predictions with features for full annotation
+                        # For now, just note this in the log
+                        self.logger.info("Full VCF annotation requested: all features and SHAP values will be added to VCF")
+                    else:
+                        self.logger.info("Full VCF annotation requested: all features and SHAP values will be added to VCF")
+                
                 self._run_step(
                     'add_NMDannot_to_vcf.py',
-                    [
-                        '-v', vcf_to_annotate,
-                        '-a', predictions_to_use,
-                        '-o', final_vcf
-                    ],
+                    vcf_args,
                     "8. Add NMD annotation to VCF"
                 )
                 outputs['final_vcf'] = str(final_vcf)
@@ -436,6 +506,8 @@ class NMDPipeline:
             self.logger.info(f"Final annotated VCF: {outputs['final_vcf']}")
         if 'predictions_txt' in outputs:
             self.logger.info(f"Predictions table: {outputs['predictions_txt']}")
+        if 'features_txt_output' in outputs:
+            self.logger.info(f"Features table: {outputs['features_txt_output']}")
         
         # Clean up intermediate files if requested
         if not keep_intermediate:
@@ -456,11 +528,12 @@ class NMDPipeline:
                 if 'vep_annotated_vcf' in outputs and end_step > 8:
                     intermediate_files.append(outputs['vep_annotated_vcf'])
             
-            if 3 not in keep_files and 'features_txt' in outputs and end_step > 6:
+            # Always clean intermediate feature files from steps 3 and 6 (unless --keep-all)
+            if 'features_txt' in outputs and end_step > 6:
                 intermediate_files.append(outputs['features_txt'])
-            if 3 not in keep_files and 'translationai_fasta' in outputs and end_step > 6:
+            if 'translationai_fasta' in outputs and end_step > 6:
                 intermediate_files.append(outputs['translationai_fasta'])
-            if 6 not in keep_files and 'features_translationai_txt' in outputs and end_step > 7:
+            if 'features_translationai_txt' in outputs and end_step > 7:
                 intermediate_files.append(outputs['features_translationai_txt'])
             
             # Always clean up VEP and TranslationAI intermediate files
@@ -514,5 +587,4 @@ class NMDPipeline:
         
         return step_methods[step_number](input_file, **kwargs)
     
-    # Individual step methods could be added here for granular control
-    # For brevity, keeping the main run() method as primary interface
+

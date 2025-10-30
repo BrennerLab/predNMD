@@ -18,14 +18,17 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Complete pipeline from raw VCF
+  # Complete pipeline from raw VCF (VEP annotation will be auto-detected and run if needed)
   deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml
   
   # Filter for specific gene 
   deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --gene BRCA1
   
-  # If you already have VEP annotations
-  deepnmd run -i vep_annotated.vcf -o output_dir -s sample1 -c config.yaml --skip-vep
+  # Output separate feature table with all features and SHAP values
+  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --output-features
+  
+  # Add all features and SHAP values to VCF INFO field
+  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --full-vcf-annotation
   
   # Start from existing feature table
   deepnmd run -i features.txt -o output_dir -s sample1 -c config.yaml --from-features
@@ -33,8 +36,13 @@ Examples:
   # Generate predictions only (no VCF output)
   deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --no-vcf-output
   
-  # Keep specific intermediate files
-  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --keep-features
+  # Skip PTC check for SNVs (but not frameshifts) in step 3
+  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --skip-ptc-check
+  
+  # Specify custom AF column for step 3
+  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --af-column gnomADg_AF
+  
+
   
   # Generate template config file
   deepnmd init-config -o config.yaml
@@ -59,8 +67,6 @@ For detailed options, run: deepnmd run -h
                               help='Skip protein-coding region filtering')
     workflow_group.add_argument('--gene', type=str, metavar='GENE',
                               help='Filter variants to specific gene (by SYMBOL or Ensembl ID)')
-    workflow_group.add_argument('--skip-vep', action='store_true',
-                              help='Skip VCF filtering and VEP annotation (input already VEP-annotated)')
     workflow_group.add_argument('--from-features', action='store_true',
                               help='Start from existing feature table (tab-delimited)')
     workflow_group.add_argument('--no-vcf-output', action='store_true',
@@ -70,29 +76,39 @@ For detailed options, run: deepnmd run -h
     workflow_group.add_argument('--predictions-file', metavar='FILE',
                               help='Pre-computed predictions file (for --only-vcf-annotation)')
     
+    # Output options
+    output_group = run_parser.add_argument_group('Output options')
+    output_group.add_argument('--output-features', action='store_true',
+                            help='Output a separate feature table with all features and SHAP values (prediction table will only contain essential columns)')
+    output_group.add_argument('--full-vcf-annotation', action='store_true',
+                            help='Add all features and SHAP values (n_terminal_escape_contrib, c_terminal_escape_contrib, general_escape_contrib) to VCF INFO field in addition to standard NMD annotations')
+    
+    # Feature extraction options
+    feature_group = run_parser.add_argument_group('Feature extraction options')
+    feature_group.add_argument('--skip-ptc-check', action='store_true',
+                             help='Skip PTC check for SNVs (NOT frameshifts) in step 3. Assumes all SNVs annotated as stop_gained create PTCs.')
+    feature_group.add_argument('--af-column', type=str, metavar='COLUMN',
+                             help='Specify which AF column to use in step 3 (default: auto-detect gnomAD_AF or gnomADg_AF)')
+    
     # File retention options (human-readable!)
     files_group = run_parser.add_argument_group('File retention options')
     files_group.add_argument('--keep-all', action='store_true',
                            help='Keep all intermediate files')
     files_group.add_argument('--keep-filtered-vcf', action='store_true',
                            help='Keep protein-coding filtered VCF')
-    #files_group.add_argument('--keep-vep-vcf', action='store_true',
-    #                       help='Keep VEP-annotated VCF')
-    files_group.add_argument('--keep-features', action='store_true',
-                           help='Keep feature extraction outputs')
     
     # Reference files
     ref_group = run_parser.add_argument_group('Reference files (override config)')
-    ref_group.add_argument('--gtf', help='GTF annotation file')
-    ref_group.add_argument('--genome', help='Genome FASTA file')
-    ref_group.add_argument('--cds', help='CDS FASTA file')
+    ref_group.add_argument('--gtf', metavar='GTF_FILE', help='GTF annotation file')
+    ref_group.add_argument('--genome', metavar='GENOME_FILE', help='Genome FASTA file')
+    ref_group.add_argument('--cds', metavar='CDS_FILE', help='CDS FASTA file')
     
     # Annotation files
     annot_group = run_parser.add_argument_group('Annotation files (override config)')
-    annot_group.add_argument('--gnomad', help='gnomAD constraint metrics file')
-    annot_group.add_argument('--phylop', help='phyloP bigWig file')
-    annot_group.add_argument('--m6a', help='m6A annotation file')
-    annot_group.add_argument('--expression', help='Gene expression file')
+    annot_group.add_argument('--gnomad', metavar='GNOMAD_FILE', help='gnomAD constraint metrics file')
+    annot_group.add_argument('--phylop', metavar='PHYLOP_FILE', help='phyloP bigWig file')
+    annot_group.add_argument('--m6a', metavar='M6A_FILE', help='m6A annotation file')
+    annot_group.add_argument('--expression', metavar='EXPRESSION_FILE', help='Gene expression file')
     
     # VEP options
     vep_group = run_parser.add_argument_group('VEP options (override config)')
@@ -118,7 +134,7 @@ For detailed options, run: deepnmd run -h
                            help='Output configuration file')
     
     # Version
-    parser.add_argument('--version', action='version', version='DeepNMD 1.1.0')
+    parser.add_argument('--version', action='version', version='DeepNMD 1.2.0')
     
     return parser
 
@@ -170,13 +186,13 @@ def cmd_run(args):
         print(f"INFO: Starting from feature table (Step 7)")
     elif args.gene:
         print(f"INFO: Gene filtering enabled for {args.gene}")
-        # Auto-detect VCF type
+        # Auto-detect VCF type using the updated detection logic
         is_vep = is_vep_annotated(args.input)
         
-        if args.skip_vep or is_vep:
+        if is_vep:
             # VEP-annotated: Use CSQ field
-            print("INFO: Detected VEP-annotated VCF")
-            print("INFO: Using CSQ field for filtering")
+            print("INFO: Detected VEP-annotated file")
+            print("INFO: Using CSQ/annotation field for filtering")
             
             output_dir = Path(args.output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -192,17 +208,18 @@ def cmd_run(args):
                 return 1
         else:
             # Raw VCF: Use GTF in Step 1
-            print("INFO: Detected raw VCF")
+            print("INFO: Detected raw VCF (not VEP-annotated)")
             print("INFO: Using GTF coordinates in Step 1")
             start_step = 1
             gene_filter = args.gene
-    elif args.skip_vep:
-        start_step = 3  # Start from feature extraction
-        print(f"INFO: Skipping VEP annotation (Step 3)")
     elif args.skip_filtering:
         start_step = 2  # Start from VEP
         print(f"INFO: Skipping protein-coding filter (Step 2)")
-    
+    else:
+        # Auto-detect if VEP annotation is present
+        # If VEP-annotated, skip VEP step (step 2)
+        # Pipeline will handle this in the run() method
+        pass
     
     if args.only_vcf_annotation:
         if not args.predictions_file:
@@ -214,21 +231,17 @@ def cmd_run(args):
         end_step = 7  # Stop after predictions
     
     # Determine which files to keep
-    keep_files = [2]
+    keep_files = [2]  # Always keep VEP annotated VCF
     if args.keep_all:
         keep_intermediate = True
     else:
         keep_intermediate = False
         if args.keep_filtered_vcf:
             keep_files.append(1)
-        #if args.keep_vep_vcf:
-        #    keep_files.append(2)
-        if args.keep_features:
-            keep_files.extend([3, 6])  # Keep both feature outputs
     
     # Validate conflicting options
-    if args.from_features and (args.skip_vep or args.skip_filtering):
-        print("Error: --from-features cannot be combined with --skip-vep or --skip-filtering", 
+    if args.from_features and args.skip_filtering:
+        print("Error: --from-features cannot be combined with --skip-filtering", 
               file=sys.stderr)
         return 1
     
@@ -249,8 +262,11 @@ def cmd_run(args):
             keep_intermediate=keep_intermediate,
             keep_files=keep_files,
             predictions_file=args.predictions_file if args.only_vcf_annotation else None,
-            #gene_filter=args.gene if hasattr(args, 'gene') and args.gene else None
-            gene_filter=gene_filter
+            gene_filter=gene_filter,
+            output_features=args.output_features if hasattr(args, 'output_features') else False,
+            full_vcf_annotation=args.full_vcf_annotation if hasattr(args, 'full_vcf_annotation') else False,
+            skip_ptc_check=args.skip_ptc_check if hasattr(args, 'skip_ptc_check') else False,
+            af_column=args.af_column if hasattr(args, 'af_column') else None
         )
         
         print("\n" + "=" * 70)
@@ -261,12 +277,14 @@ def cmd_run(args):
             print(f"\nFinal annotated VCF: {outputs['final_vcf']}")
         if 'predictions_txt' in outputs:
             print(f"Predictions table: {outputs['predictions_txt']}")
+        if 'features_txt_output' in outputs:
+            print(f"Features table: {outputs['features_txt_output']}")
         
         # Show kept intermediate files if any
         if keep_intermediate or keep_files:
             print("\nIntermediate files retained:")
             for key, path in outputs.items():
-                if key not in ['final_vcf', 'predictions_txt']:
+                if key not in ['final_vcf', 'predictions_txt', 'features_txt_output']:
                     if Path(path).exists():
                         print(f"  - {path}")
         

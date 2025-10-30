@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 """
+NMD SHAP Analysis Script - Random Forest Version
+
 This script takes a trained Random Forest model for NMD trigger prediction and applies SHAP analysis
 to explain predictions in terms of N-terminal vs C-terminal escape mechanisms.
 
@@ -50,7 +52,7 @@ def load_model_components(model_dir):
     if not isinstance(model, RandomForestClassifier):
         raise ValueError(f"Expected RandomForestClassifier, got {type(model)}")
     
-    categorical_features = config.get('categorical_features', ['50nt_rule'])
+    categorical_features = config.get('categorical_features', ['50nt_rule', 'has_downstream_inframeAUG'])
     continuous_features = config.get('continuous_features', [])
     
     if not continuous_features and hasattr(scaler, 'feature_names_in_'):
@@ -325,56 +327,98 @@ def calculate_nt_ct_classification(escape_contributions):
         'has_nt_ct_mechanisms': total_nt_ct_escape > 0
     }
 
-def create_output_data_minimal(input_data, shap_results, escape_contributions):
-    """Create output dataframe with original data plus analysis results"""
-    print("Creating output data...")
+def create_output_data_minimal(input_data, shap_results, escape_contributions, separate_features=False):
+    """Create output dataframe with analysis results
     
-    output_data = input_data.copy()
+    Args:
+        input_data: Original input data with all features
+        shap_results: SHAP analysis results
+        escape_contributions: Escape contribution values
+        separate_features: If True, return separate dataframes for predictions and features
+        
+    Returns:
+        If separate_features=False (default): Minimal predictions dataframe only 
+            (essential columns + analysis results: CHR, POS, REF_ALLELE, ALT_ALLELE, 
+            transcript_id, gene_id, nmd_trigger_probability, mechanism_classification,
+            c_terminal_probability, n_terminal_probability)
+        If separate_features=True: Tuple of (predictions_df, features_df)
+            - predictions_df: Minimal predictions table
+            - features_df: All original input features plus SHAP contribution values
+    """
+    print("Creating output data...")
     
     nt_ct_results = calculate_nt_ct_classification(escape_contributions)
     mech_probs = calculate_mechanism_probabilities(escape_contributions)
     
-    output_data['nmd_trigger_probability'] = shap_results['trigger_predictions']
-    
-    output_data['n_terminal_escape_contrib'] = escape_contributions['n_terminal_contrib']
-    output_data['c_terminal_escape_contrib'] = escape_contributions['c_terminal_contrib']
-    output_data['general_escape_contrib'] = escape_contributions['general_contrib']
-    
     # Add mechanism classification and probabilities - only for NMD escape cases
     is_escape = shap_results['escape_predictions'] > 0.5
     
-    output_data['mechanism_classification'] = np.where(
+    mechanism_classification = np.where(
         is_escape,
         nt_ct_results['mechanism_classification'],
         None
     )
     
-    output_data['n_terminal_probability'] = np.where(
+    n_terminal_probability = np.where(
         is_escape,
         mech_probs['n_terminal_probability'],
         np.nan
     )
     
-    output_data['c_terminal_probability'] = np.where(
+    c_terminal_probability = np.where(
         is_escape,
         mech_probs['c_terminal_probability'],
         np.nan
     )
     
-    print(f"Output data created with {len(output_data)} samples and 7 analysis columns")
+    # Create minimal predictions table
+    essential_cols = ['CHR', 'POS', 'REF_ALLELE', 'ALT_ALLELE', 'transcript_id', 'gene_id']
+    pred_data = {}
     
-    return output_data
+    for col in essential_cols:
+        if col in input_data.columns:
+            pred_data[col] = input_data[col]
+    
+    pred_data['nmd_trigger_probability'] = shap_results['trigger_predictions']
+    pred_data['mechanism_classification'] = mechanism_classification
+    pred_data['c_terminal_probability'] = c_terminal_probability
+    pred_data['n_terminal_probability'] = n_terminal_probability
+    
+    predictions_df = pd.DataFrame(pred_data)
+    
+    if separate_features:
+        # Create features table with all original features plus SHAP values
+        features_df = input_data.copy()
+        features_df['n_terminal_escape_contrib'] = escape_contributions['n_terminal_contrib']
+        features_df['c_terminal_escape_contrib'] = escape_contributions['c_terminal_contrib']
+        features_df['general_escape_contrib'] = escape_contributions['general_contrib']
+        
+        print(f"Created predictions table with {len(predictions_df)} samples and {len(predictions_df.columns)} columns")
+        print(f"Created features table with {len(features_df)} samples and {len(features_df.columns)} columns")
+        
+        return predictions_df, features_df
+    else:
+        # Default behavior: return minimal prediction table only
+        print(f"Created minimal predictions table with {len(predictions_df)} samples and {len(predictions_df.columns)} columns")
+        
+        return predictions_df
 
-def print_summary_statistics_minimal(output_data, escape_predictions):
+def print_summary_statistics_minimal(output_data_or_pred, escape_predictions):
     """Print summary statistics"""
     print("\n" + "="*70)
     print("MECHANISM ANALYSIS SUMMARY")
     print("="*70)
     
-    n_samples = len(output_data)
+    # Handle both single dataframe and tuple of (predictions, features)
+    if isinstance(output_data_or_pred, tuple):
+        pred_data = output_data_or_pred[0]
+    else:
+        pred_data = output_data_or_pred
+    
+    n_samples = len(pred_data)
     
     print(f"\nNMD Predictions (n={n_samples}):")
-    trigger_probs = output_data['nmd_trigger_probability']
+    trigger_probs = pred_data['nmd_trigger_probability']
     
     print(f"  Trigger: Mean={trigger_probs.mean():.4f}, Range={trigger_probs.min():.4f}-{trigger_probs.max():.4f}")
     print(f"  Escape: Mean={escape_predictions.mean():.4f}, Range={escape_predictions.min():.4f}-{escape_predictions.max():.4f}")
@@ -385,28 +429,45 @@ def print_summary_statistics_minimal(output_data, escape_predictions):
     
     if n_escape > 0:
         print(f"\nMechanism Classification (escape cases only):")
-        escape_classifications = output_data.loc[escape_predictions > 0.5, 'mechanism_classification']
+        escape_classifications = pred_data.loc[escape_predictions > 0.5, 'mechanism_classification']
         class_counts = escape_classifications.value_counts()
         for mechanism, count in class_counts.items():
             percentage = (count / n_escape) * 100
             print(f"  {mechanism}: {count} ({percentage:.1f}%)")
         
         print(f"\nMechanism Probabilities (escape cases only):")
-        n_probs = output_data.loc[escape_predictions > 0.5, 'n_terminal_probability']
-        c_probs = output_data.loc[escape_predictions > 0.5, 'c_terminal_probability']
+        n_probs = pred_data.loc[escape_predictions > 0.5, 'n_terminal_probability']
+        c_probs = pred_data.loc[escape_predictions > 0.5, 'c_terminal_probability']
         print(f"  N-terminal: Mean={n_probs.mean():.3f}, Range={n_probs.min():.3f}-{n_probs.max():.3f}")
         print(f"  C-terminal: Mean={c_probs.mean():.3f}, Range={c_probs.min():.3f}-{c_probs.max():.3f}")
-    
-    print(f"\nRaw Escape Contributions (all samples):")
-    print(f"  N-terminal: Mean={output_data['n_terminal_escape_contrib'].mean():+.4f}")
-    print(f"  C-terminal: Mean={output_data['c_terminal_escape_contrib'].mean():+.4f}")
-    print(f"  General: Mean={output_data['general_escape_contrib'].mean():+.4f}")
 
-def save_output_data(output_data, output_file):
-    """Save output data to file"""
+def save_output_data(output_data_or_tuple, output_file, features_output_file=None):
+    """Save output data to file(s)
+    
+    Args:
+        output_data_or_tuple: Either a single dataframe or tuple of (predictions_df, features_df)
+        output_file: Path to save predictions/main output
+        features_output_file: Optional path to save features separately
+    """
     sep = ',' if output_file.endswith('.csv') else '\t'
-    output_data.to_csv(output_file, sep=sep, index=False, float_format='%.6f')
-    print(f"Results saved to {output_file}")
+    
+    if isinstance(output_data_or_tuple, tuple):
+        # Separate predictions and features
+        predictions_df, features_df = output_data_or_tuple
+        
+        # Save predictions
+        predictions_df.to_csv(output_file, sep=sep, index=False, float_format='%.6f')
+        print(f"Predictions saved to {output_file}")
+        
+        # Save features if output file specified
+        if features_output_file:
+            sep_features = ',' if features_output_file.endswith('.csv') else '\t'
+            features_df.to_csv(features_output_file, sep=sep_features, index=False, float_format='%.6f')
+            print(f"Features saved to {features_output_file}")
+    else:
+        # Single combined output
+        output_data_or_tuple.to_csv(output_file, sep=sep, index=False, float_format='%.6f')
+        print(f"Results saved to {output_file}")
 
 def main():
     """Main function"""
@@ -417,6 +478,7 @@ def main():
     parser.add_argument('model_directory', help='Directory containing model files')
     parser.add_argument('input_file', help='Input data file (.txt or .csv)')
     parser.add_argument('output_file', help='Output file (.txt or .csv)')
+    parser.add_argument('--features-output', help='Optional separate file for features table (all original features + SHAP values)')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
     
     args = parser.parse_args()
@@ -438,10 +500,13 @@ def main():
         escape_contributions, trigger_contributions = calculate_group_contributions_trigger_space(shap_results, feature_groups)
         
         print("\nCreating output...")
-        output_data = create_output_data_minimal(input_data, shap_results, escape_contributions)
+        # Determine if we need separate features output
+        separate_features = args.features_output is not None
+        output_data = create_output_data_minimal(input_data, shap_results, escape_contributions, 
+                                                  separate_features=separate_features)
         
         print("\nSaving results...")
-        save_output_data(output_data, args.output_file)
+        save_output_data(output_data, args.output_file, args.features_output)
         
         print_summary_statistics_minimal(output_data, shap_results['escape_predictions'])
         
@@ -449,9 +514,13 @@ def main():
         print("ANALYSIS COMPLETED SUCCESSFULLY")
         print("="*70)
         print(f"\nResults saved to: {args.output_file}")
+        if args.features_output:
+            print(f"Features saved to: {args.features_output}")
         
     except Exception as e:
         print(f"\nError: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":

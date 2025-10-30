@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-Add NMD annotations (nmd_trigger_probability, c_terminal_probability, n_terminal_probability) 
-from the tab-delimited file into the VEP-annotated VCF file at the transcript level.
+Add NMD annotations from the tab-delimited file into the VEP-annotated VCF file at the transcript level.
 
 The script matches annotations by chromosome, position, reference allele, 
-alternate allele, and transcript ID, then appends the probability fields to each 
+alternate allele, and transcript ID, then appends the fields to each 
 transcript's CSQ entry.
+
+Supports two modes:
+1. Standard mode: Adds nmd_trigger_probability, mechanism_classification, c_terminal_probability, n_terminal_probability
+2. Full annotation mode (--full-annotation): Also adds all features and SHAP values
 """
 
 import sys
@@ -24,10 +27,15 @@ def normalize_transcript_id(transcript_id):
     # Remove version number 
     return transcript_id.split('.')[0]
 
-def parse_annotation_file(annotation_file, debug=False):
+def parse_annotation_file(annotation_file, full_annotation=False, debug=False):
     """
     Parse the tab-delimited annotation file and create a dictionary
     keyed by (chr, pos, ref, alt, transcript_id) tuple.
+    
+    Args:
+        annotation_file: Path to annotation file
+        full_annotation: If True, include all features and SHAP values
+        debug: Enable debug output
     """
     annotations = {}
     
@@ -61,9 +69,38 @@ def parse_annotation_file(annotation_file, debug=False):
                 print(f"Available columns: {', '.join(header)}", file=sys.stderr)
                 sys.exit(1)
             
+            # Core NMD fields
             nmd_prob_idx = header.index('nmd_trigger_probability')
-            c_term_prob_idx = header.index('c_terminal_probability')
-            n_term_prob_idx = header.index('n_terminal_probability')
+            
+            # Try to find mechanism classification (may or may not exist)
+            mech_class_idx = None
+            if 'mechanism_classification' in header:
+                mech_class_idx = header.index('mechanism_classification')
+            
+            # Try to find probability fields (may or may not exist)
+            c_term_prob_idx = None
+            n_term_prob_idx = None
+            if 'c_terminal_probability' in header:
+                c_term_prob_idx = header.index('c_terminal_probability')
+            if 'n_terminal_probability' in header:
+                n_term_prob_idx = header.index('n_terminal_probability')
+            
+            # If full annotation, collect all remaining columns for features/SHAP
+            full_annot_columns = []
+            if full_annotation:
+                # Define core columns to exclude
+                core_columns = {'CHR', 'POS', 'REF_ALLELE', 'ALT_ALLELE', 'transcript_id', 'Feature', 
+                               'TRANSCRIPT', 'Transcript', 'gene_id',
+                               'nmd_trigger_probability', 'mechanism_classification', 
+                               'c_terminal_probability', 'n_terminal_probability'}
+                
+                # Add all other columns as features
+                for i, col in enumerate(header):
+                    if col not in core_columns:
+                        full_annot_columns.append((i, col))
+                
+                if debug:
+                    print(f"Full annotation mode: will include {len(full_annot_columns)} additional fields")
             
         except ValueError as e:
             print(f"Error: Required column not found in annotation file: {e}", file=sys.stderr)
@@ -95,18 +132,39 @@ def parse_annotation_file(annotation_file, debug=False):
                 
                 key = (chrom, pos, ref, alt, transcript)
                 
-                # Get annotation values (handle empty values)
-                nmd_prob = fields[nmd_prob_idx].strip() if nmd_prob_idx < len(fields) else ''
-                c_term_prob = fields[c_term_prob_idx].strip() if c_term_prob_idx < len(fields) else ''
-                n_term_prob = fields[n_term_prob_idx].strip() if n_term_prob_idx < len(fields) else ''
+                # Get core annotation values (handle empty values)
+                annot_dict = {}
                 
-                annotations[key] = {
-                    'nmd_trigger_probability': nmd_prob if nmd_prob else '.',
-                    'c_terminal_probability': c_term_prob if c_term_prob else '.',
-                    'n_terminal_probability': n_term_prob if n_term_prob else '.'
-                }
+                nmd_prob = fields[nmd_prob_idx].strip() if nmd_prob_idx < len(fields) else ''
+                annot_dict['nmd_trigger_probability'] = nmd_prob if nmd_prob else '.'
+                
+                if mech_class_idx is not None:
+                    mech_class = fields[mech_class_idx].strip() if mech_class_idx < len(fields) else ''
+                    annot_dict['mechanism_classification'] = mech_class if mech_class else '.'
+                else:
+                    annot_dict['mechanism_classification'] = '.'
+                
+                if c_term_prob_idx is not None:
+                    c_term_prob = fields[c_term_prob_idx].strip() if c_term_prob_idx < len(fields) else ''
+                    annot_dict['c_terminal_probability'] = c_term_prob if c_term_prob else '.'
+                else:
+                    annot_dict['c_terminal_probability'] = '.'
+                
+                if n_term_prob_idx is not None:
+                    n_term_prob = fields[n_term_prob_idx].strip() if n_term_prob_idx < len(fields) else ''
+                    annot_dict['n_terminal_probability'] = n_term_prob if n_term_prob else '.'
+                else:
+                    annot_dict['n_terminal_probability'] = '.'
+                
+                # Add full annotation fields if requested
+                if full_annotation:
+                    for col_idx, col_name in full_annot_columns:
+                        value = fields[col_idx].strip() if col_idx < len(fields) else ''
+                        annot_dict[col_name] = value if value else '.'
+                
+                annotations[key] = annot_dict
     
-    return annotations
+    return annotations, full_annot_columns if full_annotation else []
 
 def parse_csq_format(vcf_file):
     """
@@ -133,10 +191,17 @@ def parse_csq_format(vcf_file):
     
     return None, None
 
-def add_annotations_to_vcf(vcf_file, annotations, output_file, debug=False):
+def add_annotations_to_vcf(vcf_file, annotations, output_file, full_annot_columns=None, debug=False):
     """
     Read VCF file, add annotations to CSQ field for each transcript, and write output.
     Returns the number of unique annotations matched.
+    
+    Args:
+        vcf_file: Input VCF file path
+        annotations: Dictionary of annotations keyed by (chr, pos, ref, alt, transcript)
+        output_file: Output VCF file path
+        full_annot_columns: List of (column_idx, column_name) tuples for full annotation
+        debug: Enable debug output
     """
     # Parse CSQ format to find transcript position
     csq_fields, feature_idx = parse_csq_format(vcf_file)
@@ -172,7 +237,18 @@ def add_annotations_to_vcf(vcf_file, annotations, output_file, debug=False):
                     format_start = line.find('Format: ') + 8
                     format_end = line.find('"', format_start)
                     old_format = line[format_start:format_end]
-                    new_format = old_format + '|NMD_PROB|C_TERMINAL_PROB|N_TERMINAL_PROB'
+                    
+                    # Build new format string
+                    new_fields = ['NMD_PROB', 'MECH_CLASS', 'C_TERMINAL_PROB', 'N_TERMINAL_PROB']
+                    
+                    # Add full annotation fields if specified
+                    if full_annot_columns:
+                        for _, col_name in full_annot_columns:
+                            # Convert column name to VCF-friendly format (replace spaces/special chars with underscores)
+                            vcf_col_name = col_name.replace(' ', '_').replace('-', '_').replace('.', '_')
+                            new_fields.append(vcf_col_name.upper())
+                    
+                    new_format = old_format + '|' + '|'.join(new_fields)
                     line = line[:format_start] + new_format + line[format_end:]
                     csq_header_updated = True
                 outfile.write(line)
@@ -226,24 +302,20 @@ def add_annotations_to_vcf(vcf_file, annotations, output_file, debug=False):
                             
                             # Try to find a match
                             matched = False
-                            nmd_prob = '.'
-                            c_term_prob = '.'
-                            n_term_prob = '.'
+                            annot_data = None
                             actual_key = None
                             
                             # Try 1: Direct match with CSQ allele
                             key = (chrom_normalized, pos, ref, csq_allele, transcript_id)
                             
                             if key in annotations:
-                                nmd_prob = annotations[key]['nmd_trigger_probability']
-                                c_term_prob = annotations[key]['c_terminal_probability']
-                                n_term_prob = annotations[key]['n_terminal_probability']
+                                annot_data = annotations[key]
                                 actual_key = key
                                 matched = True
                                 match_stats['direct'] += 1
                                 
                                 if debug and matches_found < 5:
-                                    print(f"  ✓ MATCH FOUND (direct)! NMD_PROB={nmd_prob}, C_TERMINAL_PROB={c_term_prob}, N_TERMINAL_PROB={n_term_prob}")
+                                    print(f"  ✓ MATCH FOUND (direct)!")
                             
                             # Try 2: Deletion - annotation has empty ALT
                             # VCF/CSQ: ACACT -> A (or -), Annotation: ACACT -> ""
@@ -251,15 +323,13 @@ def add_annotations_to_vcf(vcf_file, annotations, output_file, debug=False):
                                 key_del = (chrom_normalized, pos, ref, '', transcript_id)
                                 
                                 if key_del in annotations:
-                                    nmd_prob = annotations[key_del]['nmd_trigger_probability']
-                                    c_term_prob = annotations[key_del]['c_terminal_probability']
-                                    n_term_prob = annotations[key_del]['n_terminal_probability']
+                                    annot_data = annotations[key_del]
                                     actual_key = key_del
                                     matched = True
                                     match_stats['empty_alt'] += 1
                                     
                                     if debug and matches_found < 5:
-                                        print(f"  ✓ MATCH FOUND (empty ALT)! NMD_PROB={nmd_prob}, C_TERMINAL_PROB={c_term_prob}, N_TERMINAL_PROB={n_term_prob}")
+                                        print(f"  ✓ MATCH FOUND (empty ALT)!")
                             
                             # Track unique annotations
                             if matched and actual_key:
@@ -269,9 +339,28 @@ def add_annotations_to_vcf(vcf_file, annotations, output_file, debug=False):
                                 print(f"  ✗ No match found")
                             
                             # Append new fields to CSQ entry
-                            csq_values.append(nmd_prob)
-                            csq_values.append(c_term_prob)
-                            csq_values.append(n_term_prob)
+                            if annot_data:
+                                csq_values.append(annot_data['nmd_trigger_probability'])
+                                csq_values.append(annot_data['mechanism_classification'])
+                                csq_values.append(annot_data['c_terminal_probability'])
+                                csq_values.append(annot_data['n_terminal_probability'])
+                                
+                                # Add full annotation fields if specified
+                                if full_annot_columns:
+                                    for _, col_name in full_annot_columns:
+                                        csq_values.append(annot_data.get(col_name, '.'))
+                            else:
+                                # No match - add empty values
+                                csq_values.append('.')
+                                csq_values.append('.')
+                                csq_values.append('.')
+                                csq_values.append('.')
+                                
+                                # Add empty full annotation fields if specified
+                                if full_annot_columns:
+                                    for _ in full_annot_columns:
+                                        csq_values.append('.')
+                            
                             updated_transcripts.append('|'.join(csq_values))
                         
                         # Reconstruct CSQ field
@@ -311,6 +400,11 @@ def main():
         help='Output VCF file with added annotations'
     )
     parser.add_argument(
+        '--full-annotation',
+        action='store_true',
+        help='Include all features and SHAP values in VCF INFO field (not just probabilities)'
+    )
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Print debugging information'
@@ -319,19 +413,27 @@ def main():
     args = parser.parse_args()
     
     print("Reading annotation file...")
-    annotations = parse_annotation_file(args.annotations, args.debug)
+    annotations, full_annot_columns = parse_annotation_file(args.annotations, 
+                                                            full_annotation=args.full_annotation,
+                                                            debug=args.debug)
     print(f"Loaded {len(annotations)} transcript-level annotations")
     
+    if args.full_annotation:
+        print(f"Full annotation mode: will add {len(full_annot_columns)} additional fields to VCF")
+    
     if args.debug and len(annotations) > 0:
-        print("\nFirst 5 annotation keys:")
-        for i, (key, val) in enumerate(list(annotations.items())[:5]):
+        print("\nFirst 3 annotation keys:")
+        for i, (key, val) in enumerate(list(annotations.items())[:3]):
             print(f"  {key}")
             print(f"    NMD_PROB: {val['nmd_trigger_probability']}")
+            print(f"    MECH_CLASS: {val['mechanism_classification']}")
             print(f"    C_TERMINAL_PROB: {val['c_terminal_probability']}")
             print(f"    N_TERMINAL_PROB: {val['n_terminal_probability']}")
     
     print("\nProcessing VCF file and adding annotations to CSQ field...")
-    matches_found, match_stats = add_annotations_to_vcf(args.vcf, annotations, args.output, args.debug)
+    matches_found, match_stats = add_annotations_to_vcf(args.vcf, annotations, args.output, 
+                                                         full_annot_columns if args.full_annotation else None,
+                                                         args.debug)
     print(f"Found {matches_found} matching transcript annotations")
     
     # Print matching statistics

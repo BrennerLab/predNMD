@@ -1149,12 +1149,13 @@ def analyze_ptc(transcript, ptc_cds_pos, variant_cds_pos, variant_length_change,
 
 def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_codons_dict=None,
                     force_alt=False, suppress_warnings=False, cai_calculator=None, num_codons=50, 
-                    min_codons=10, gene_m6a=None, af_column=None, store_sequence=False, skip_check=False,
-                    warnings_list=None):
+                    min_codons=10, gene_m6a=None, af_column=None, store_sequence=False,
+                    skip_ptc_check=False, warnings_list=None):
     """
     Process a single VEP output line and return PTC analysis results.
     If store_sequence=True, stores modified_sequence WITH natural stop codon for TranslationAI FASTA output.
-    If skip_check=True, skips PTC creation verification and directly calculates features.
+    If skip_ptc_check=True, skips reference allele match check (for both SNVs and frameshifts) 
+        AND PTC verification for SNVs only (frameshifts still verified).
     If warnings_list is provided, all validation failures are logged to it.
     If af_column is provided, extracts AF from that column.
     """
@@ -1297,22 +1298,16 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
         effective_biotype = transcript.biotype
     
     if effective_biotype and effective_biotype != 'protein_coding':
-        if not skip_check:
-            log_warning(f"Biotype '{effective_biotype}' is not protein_coding", variant_id)
-            return results
-        else:
-            log_warning(f"Biotype '{effective_biotype}' is not protein_coding (processing anyway due to --skip-check)", variant_id)
+        log_warning(f"Biotype '{effective_biotype}' is not protein_coding", variant_id)
+        return results
     
     transcript_chrom = transcript.chrom
     if transcript_chrom.startswith('chr'):
         transcript_chrom = transcript_chrom[3:]
     
     if transcript_chrom != chrom:
-        if not skip_check:
-            log_warning(f"Chromosome mismatch: variant on '{chrom}', transcript on '{transcript_chrom}'", variant_id)
-            return results
-        else:
-            log_warning(f"Chromosome mismatch: variant on '{chrom}', transcript on '{transcript_chrom}' (processing anyway due to --skip-check)", variant_id)
+        log_warning(f"Chromosome mismatch: variant on '{chrom}', transcript on '{transcript_chrom}'", variant_id)
+        return results
     
     original_cds_seq = None
     natural_stop_codon = None  # Will store the 3-nt natural stop codon for TranslationAI
@@ -1358,11 +1353,8 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
     original_cds_length = len(original_cds_seq)
     
     if var_cds_pos > original_cds_length:
-        if not skip_check:
-            log_warning(f"CDS position {var_cds_pos} exceeds CDS length {original_cds_length}", variant_id)
-            return results
-        else:
-            log_warning(f"CDS position {var_cds_pos} exceeds CDS length {original_cds_length} (processing anyway due to --skip-check)", variant_id)
+        log_warning(f"CDS position {var_cds_pos} exceeds CDS length {original_cds_length}", variant_id)
+        return results
     
     variant_length_change = calculate_variant_length_change(ref_allele, alt_allele)
     
@@ -1389,9 +1381,9 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
             
             ref_mismatch_msg = f"Reference allele mismatch at CDS position {var_cds_pos} in {transcript_with_version}. Expected '{expected}', found '{found}'"
             
-            if force_alt or skip_check:
-                if skip_check and not force_alt:
-                    log_warning(f"{ref_mismatch_msg} (forcing ALT due to --skip-check)", variant_id)
+            if force_alt or skip_ptc_check:
+                if skip_ptc_check and not force_alt:
+                    log_warning(f"{ref_mismatch_msg} (forcing ALT due to --skip-ptc-check)", variant_id)
                 else:
                     log_warning(ref_mismatch_msg, variant_id)
                     
@@ -1408,10 +1400,7 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
                 return results
     except Exception as e:
         log_warning(f"Exception during sequence modification: {e}", variant_id)
-        if not skip_check:
-            return results
-        else:
-            log_warning(f"Exception during sequence modification: {e} (continuing due to --skip-check, may fail later)", variant_id)
+        return results
     
     # If we still don't have a modified sequence, we cannot proceed
     if modified_seq is None:
@@ -1419,10 +1408,17 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
         return results
     
     # Check for PTC creation or skip check if requested
-    if skip_check:
+    # Determine if this is a frameshift variant
+    is_frameshift = 'frameshift_variant' in consequence
+    is_stop_gained = 'stop_gained' in consequence
+    
+    # skip_ptc_check: skips PTC verification for SNVs only (stop_gained but NOT frameshifts)
+    should_skip_ptc_verification = skip_ptc_check and is_stop_gained and not is_frameshift
+    
+    if should_skip_ptc_verification:
         variant_codon_start = ((var_cds_pos - 1) // 3) * 3
         ptc_pos = variant_codon_start + 1  # 1-based position of the PTC
-        log_warning(f"PTC check skipped (--skip-check enabled), assuming PTC at position {ptc_pos}", variant_id)
+        log_warning(f"PTC verification skipped for SNV (--skip-ptc-check enabled), assuming PTC at position {ptc_pos}", variant_id)
     else:
         ptc_pos = find_variant_induced_ptc(original_cds_seq, modified_seq, var_cds_pos)
         if not ptc_pos:
@@ -1596,8 +1592,8 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
                     help='Minimum codons required for CAI calculation (default: 10)')
     parser.add_argument('--skip-cai', action='store_true',
                     help='Skip CAI calculation (faster processing)')
-    parser.add_argument('--skip-check', action='store_true',
-                    help='Skip validation checks: biotype, chromosome match, CDS bounds, ref allele match, and PTC sequence verification. Forces processing of all variants that pass basic parsing.')
+    parser.add_argument('--skip-ptc-check', action='store_true',
+                    help='Skip reference allele match check (for both SNVs and frameshifts) AND PTC verification for SNVs only. Frameshifts will still have PTC verification. Still validates biotype, chromosome match, and CDS bounds.')
     parser.add_argument('--af-col', help='Column name to use for allele frequency (default: auto-detect gnomAD_AF or gnomADg_AF)')
     
     args = parser.parse_args()
@@ -1660,10 +1656,12 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
         print("CAI calculation disabled (--skip-cai)")
     
     # Check if PTC verification should be skipped
-    if args.skip_check:
-        print("WARNING: Validation checks are RELAXED (--skip-check)")
-        print("         Skipping: biotype check, chromosome match, CDS bounds, ref allele match, PTC verification")
-        print("         All variants passing basic parsing will be processed")
+    if args.skip_ptc_check:
+        print("INFO: --skip-ptc-check enabled")
+        print("      - Reference allele match check will be SKIPPED for both SNVs and frameshifts")
+        print("      - PTC verification will be SKIPPED for SNVs only")
+        print("      - PTC verification will still be PERFORMED for frameshift variants")
+        print("      - Other validation checks (biotype, chromosome, CDS bounds) are still enforced")
     
     print("Reading and pre-filtering VEP output file...")
     
@@ -1746,7 +1744,8 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
                                   args.force_alt, suppress_warnings=True, cai_calculator=cai_calculator, 
                                   num_codons=args.num_codons, min_codons=args.min_codons,
                                   gene_m6a=gene_m6a, af_column=af_column, 
-                                  store_sequence=store_sequences, skip_check=args.skip_check,
+                                  store_sequence=store_sequences,
+                                  skip_ptc_check=args.skip_ptc_check,
                                   warnings_list=all_warnings)
         all_results.extend(results)
     
