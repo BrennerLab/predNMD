@@ -157,6 +157,7 @@ runtime:
 ### Predictions File (`{OUTPUT_PREFIX}.with_predictions.txt`)
 
 Tab-delimited file with the following columns:
+
 **Variant Information:**
 - `CHR`: Chromosome containing the variant
 - `POS`: Position of the variant on the chromsome
