@@ -228,7 +228,7 @@ NMD runs the following steps if starting from an unannotated VCF file:
 4. **Add LOEUF/PhyloP**: Add LOEUF and phyloP scores to the feature table
 5. **TranslationAI**: Apply TranslationAI to get predicted TIS/TTS scores for downstream inframe AUG/PTC
 6. **RF Prediction**: Apply Random Forest model with SHAP analysis 
-7. **Annotate VCF**: Add prediction results (probability of triggering NMD, probability of C-terminal truncation, probability of N-terminal truncation) back to the VCF 
+7. **Annotate VCF**: Add prediction results to the INFO field of VEP-annotated VCF 
 
 
 ## All command options
