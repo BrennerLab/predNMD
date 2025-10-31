@@ -131,7 +131,7 @@ runtime:
   deepnmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --skip-ptc-check
   ```
 
-- If you also want to output the feature tables containing the calculated features for input variants in addition to the prediction results, you can use the `--output-features` option:
+- If you also want to output the feature table containing the calculated features for input variants in addition to the prediction results, you can use the `--output-features` option:
   ```
   deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml --output-features
   ```
