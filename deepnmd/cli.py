@@ -141,6 +141,9 @@ For detailed options, run: deepnmd run -h
 
 def cmd_run(args):
     """Run pipeline with human-readable workflow options"""
+    # Capture the original user command
+    original_command = ' '.join(sys.argv)
+    
     # Create or load config
     if args.config:
         config = Config(args.config)
@@ -252,7 +255,7 @@ def cmd_run(args):
     
     # Create and run pipeline
     try:
-        pipeline = NMDPipeline(config, args.output_dir, args.sample_name)
+        pipeline = NMDPipeline(config, args.output_dir, args.sample_name, original_command=original_command)
         
         # Run with determined parameters
         outputs = pipeline.run(

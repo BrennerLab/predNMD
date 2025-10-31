@@ -29,6 +29,10 @@ import shap
 import joblib
 from pathlib import Path
 
+# Import version information
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from version import get_table_annotation_lines
+
 def sigmoid(x):
     """Convert log-odds to probability using sigmoid function"""
     return 1 / (1 + np.exp(-x))
@@ -441,8 +445,8 @@ def print_summary_statistics_minimal(output_data_or_pred, escape_predictions):
         print(f"  N-terminal: Mean={n_probs.mean():.3f}, Range={n_probs.min():.3f}-{n_probs.max():.3f}")
         print(f"  C-terminal: Mean={c_probs.mean():.3f}, Range={c_probs.min():.3f}-{c_probs.max():.3f}")
 
-def save_output_data(output_data_or_tuple, output_file, features_output_file=None):
-    """Save output data to file(s)
+def save_output_data(output_data_or_tuple, output_file, features_output_file=None, command=None):
+    """Save output data to file(s) with version annotations
     
     Args:
         output_data_or_tuple: Either a single dataframe or tuple of (predictions_df, features_df)
@@ -455,18 +459,36 @@ def save_output_data(output_data_or_tuple, output_file, features_output_file=Non
         # Separate predictions and features
         predictions_df, features_df = output_data_or_tuple
         
-        # Save predictions
-        predictions_df.to_csv(output_file, sep=sep, index=False, float_format='%.6f')
+        # Save predictions with version annotations
+        with open(output_file, 'w') as f:
+            # Write version annotation lines
+            for line in get_table_annotation_lines(command=command):
+                f.write(line + '\n')
+            
+            # Write the data
+            predictions_df.to_csv(f, sep=sep, index=False, float_format='%.6f')
         print(f"Predictions saved to {output_file}")
         
         # Save features if output file specified
         if features_output_file:
             sep_features = ',' if features_output_file.endswith('.csv') else '\t'
-            features_df.to_csv(features_output_file, sep=sep_features, index=False, float_format='%.6f')
+            with open(features_output_file, 'w') as f:
+                # Write version annotation lines
+                for line in get_table_annotation_lines(command=command):
+                    f.write(line + '\n')
+                
+                # Write the data
+                features_df.to_csv(f, sep=sep_features, index=False, float_format='%.6f')
             print(f"Features saved to {features_output_file}")
     else:
-        # Single combined output
-        output_data_or_tuple.to_csv(output_file, sep=sep, index=False, float_format='%.6f')
+        # Single combined output with version annotations
+        with open(output_file, 'w') as f:
+            # Write version annotation lines
+            for line in get_table_annotation_lines(command=command):
+                f.write(line + '\n')
+            
+            # Write the data
+            output_data_or_tuple.to_csv(f, sep=sep, index=False, float_format='%.6f')
         print(f"Results saved to {output_file}")
 
 def main():
@@ -479,6 +501,7 @@ def main():
     parser.add_argument('input_file', help='Input data file (.txt or .csv)')
     parser.add_argument('output_file', help='Output file (.txt or .csv)')
     parser.add_argument('--features-output', help='Optional separate file for features table (all original features + SHAP values)')
+    parser.add_argument('--command', type=str, default=None, help='Command line used to run the software (for annotation purposes)')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
     
     args = parser.parse_args()
@@ -506,7 +529,9 @@ def main():
                                                   separate_features=separate_features)
         
         print("\nSaving results...")
-        save_output_data(output_data, args.output_file, args.features_output)
+        # Reconstruct command from sys.argv if not provided
+        command = args.command if args.command else ' '.join(sys.argv)
+        save_output_data(output_data, args.output_file, args.features_output, command=command)
         
         print_summary_statistics_minimal(output_data, shap_results['escape_predictions'])
         

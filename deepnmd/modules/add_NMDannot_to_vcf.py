@@ -13,6 +13,12 @@ Supports two modes:
 
 import sys
 import argparse
+import os
+from pathlib import Path
+
+# Add parent directory to path to import version
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from version import get_vcf_annotation_lines
 
 def normalize_chrom(chrom):
     """Normalize chromosome name to include 'chr' prefix."""
@@ -40,8 +46,21 @@ def parse_annotation_file(annotation_file, full_annotation=False, debug=False):
     annotations = {}
     
     with open(annotation_file, 'r') as f:
-        # Read header
-        header = f.readline().strip().split('\t')
+        # Skip comment lines at the beginning
+        header_line = None
+        for line in f:
+            if not line.strip() or line.strip().startswith('#'):
+                continue  # Skip empty lines and comment lines
+            else:
+                header_line = line.strip()
+                break
+        
+        if header_line is None:
+            print("ERROR: Could not find header line in annotation file.", file=sys.stderr)
+            sys.exit(1)
+        
+        # Parse header
+        header = header_line.split('\t')
         
         if debug:
             print(f"\nAnnotation file has {len(header)} columns")
@@ -191,7 +210,7 @@ def parse_csq_format(vcf_file):
     
     return None, None
 
-def add_annotations_to_vcf(vcf_file, annotations, output_file, full_annot_columns=None, debug=False):
+def add_annotations_to_vcf(vcf_file, annotations, output_file, full_annot_columns=None, command=None, debug=False):
     """
     Read VCF file, add annotations to CSQ field for each transcript, and write output.
     Returns the number of unique annotations matched.
@@ -201,6 +220,7 @@ def add_annotations_to_vcf(vcf_file, annotations, output_file, full_annot_column
         annotations: Dictionary of annotations keyed by (chr, pos, ref, alt, transcript)
         output_file: Output VCF file path
         full_annot_columns: List of (column_idx, column_name) tuples for full annotation
+        command: Command line used to run the software (optional)
         debug: Enable debug output
     """
     # Parse CSQ format to find transcript position
@@ -228,6 +248,7 @@ def add_annotations_to_vcf(vcf_file, annotations, output_file, full_annot_column
     
     with open(vcf_file, 'r') as infile, open(output_file, 'w') as outfile:
         csq_header_updated = False
+        version_lines_written = False
         
         for line in infile:
             # Handle header lines
@@ -253,7 +274,15 @@ def add_annotations_to_vcf(vcf_file, annotations, output_file, full_annot_column
                     csq_header_updated = True
                 outfile.write(line)
                 
-            elif line.startswith('##') or line.startswith('#CHROM'):
+            elif line.startswith('#CHROM'):
+                # Write version annotation lines before the column header line
+                if not version_lines_written:
+                    for version_line in get_vcf_annotation_lines(command=command):
+                        outfile.write(version_line + '\n')
+                    version_lines_written = True
+                outfile.write(line)
+                
+            elif line.startswith('##'):
                 outfile.write(line)
                 
             else:
@@ -405,12 +434,21 @@ def main():
         help='Include all features and SHAP values in VCF INFO field (not just probabilities)'
     )
     parser.add_argument(
+        '--command',
+        type=str,
+        default=None,
+        help='Command line used to run the software (for annotation purposes)'
+    )
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Print debugging information'
     )
     
     args = parser.parse_args()
+    
+    # Reconstruct command from sys.argv if not provided
+    command = args.command if args.command else ' '.join(sys.argv)
     
     print("Reading annotation file...")
     annotations, full_annot_columns = parse_annotation_file(args.annotations, 
@@ -433,7 +471,8 @@ def main():
     print("\nProcessing VCF file and adding annotations to CSQ field...")
     matches_found, match_stats = add_annotations_to_vcf(args.vcf, annotations, args.output, 
                                                          full_annot_columns if args.full_annotation else None,
-                                                         args.debug)
+                                                         command=command,
+                                                         debug=args.debug)
     print(f"Found {matches_found} matching transcript annotations")
     
     # Print matching statistics

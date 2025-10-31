@@ -8,11 +8,8 @@ This package provides a comprehensive pipeline for:
 - NMD prediction using Random Forest models
 """
 
-__version__ = "1.0.0"
-__author__ = "Your Name"
-__email__ = "your.email@example.com"
-
+from .version import __version__
 from .pipeline import NMDPipeline
 from .config import Config
 
-__all__ = ['NMDPipeline', 'Config']
+__all__ = ['NMDPipeline', 'Config', '__version__']

@@ -19,7 +19,7 @@ class NMDPipeline:
     This class manages the entire workflow from VCF input to NMD predictions.
     """
     
-    def __init__(self, config: Config, output_dir: str, sample_name: str):
+    def __init__(self, config: Config, output_dir: str, sample_name: str, original_command: str = None):
         """
         Initialize pipeline
         
@@ -31,6 +31,7 @@ class NMDPipeline:
         self.config = config
         self.output_dir = Path(output_dir)
         self.sample_name = sample_name
+        self.original_command = original_command
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Setup logging
@@ -432,6 +433,10 @@ class NMDPipeline:
                 rf_args.extend(['--features-output', features_output_txt])
                 self.logger.info("Separate features table will be generated")
             
+            # Add original command if available
+            if self.original_command:
+                rf_args.extend(['--command', self.original_command])
+            
             self._run_step(
                 'get_RF_SHAP_N-escape.py',
                 rf_args,
@@ -490,6 +495,10 @@ class NMDPipeline:
                         self.logger.info("Full VCF annotation requested: all features and SHAP values will be added to VCF")
                     else:
                         self.logger.info("Full VCF annotation requested: all features and SHAP values will be added to VCF")
+                
+                # Add original command if available
+                if self.original_command:
+                    vcf_args.extend(['--command', self.original_command])
                 
                 self._run_step(
                     'add_NMDannot_to_vcf.py',
