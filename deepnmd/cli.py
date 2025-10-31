@@ -134,7 +134,7 @@ For detailed options, run: deepnmd run -h
                            help='Output configuration file')
     
     # Version
-    parser.add_argument('--version', action='version', version='DeepNMD 1.2.0')
+    parser.add_argument('--version', action='version', version='DeepNMD 1.0.0')
     
     return parser
 
