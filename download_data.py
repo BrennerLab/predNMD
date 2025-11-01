@@ -6,7 +6,7 @@ This script downloads large annotation files needed for deepNMD analysis.
 
 Features:
 - Static datasets: gnomAD constraint metrics, phyloP conservation scores
-- Dynamic Ensembl datasets: GTF annotations, CDS sequences, reference genomes
+- Dynamic Ensembl datasets: GTF annotations, CDS sequences, reference genomes, VEP cache
 - Flexible assembly selection: GRCh37/hg19 or GRCh38/hg38
 - Flexible Ensembl release version selection
 - Progress bars (requires tqdm)
@@ -19,6 +19,9 @@ Basic usage:
     # Download Ensembl files for GRCh38 (latest release)
     python download_data.py --datasets ensembl-gtf ensembl-cds ensembl-genome
     
+    # Download Ensembl VEP cache for GRCh38
+    python download_data.py --datasets ensembl-vep
+    
     # Download Ensembl files for GRCh37 with specific release
     python download_data.py --datasets ensembl-all --assembly GRCh37 --ensembl-release 87
     
@@ -26,7 +29,7 @@ Basic usage:
     python download_data.py --list
     
     # Download specific datasets with custom directory
-    python download_data.py --datasets gnomad ensembl-gtf --data-dir /path/to/data
+    python download_data.py --datasets gnomad ensembl-gtf ensembl-vep --data-dir /path/to/data
 
 For more examples, run: python download_data.py --help
 """
@@ -154,6 +157,30 @@ def get_ensembl_genome_info(assembly='GRCh38', release=None):
         'description': f'Ensembl {assembly} reference genome (release {release})',
         'md5': None,
         'size_mb': 900,  # ~900 MB compressed
+    }
+
+
+def get_ensembl_vep_info(assembly='GRCh38', release=None):
+    """Generate Ensembl-VEP cache dataset information"""
+    assembly = get_ensembl_assembly_name(assembly)
+    
+    if release is None:
+        release = GRCH37_LAST_RELEASE if assembly == 'GRCh37' else LATEST_ENSEMBL_RELEASE
+    
+    if assembly == 'GRCh37':
+        # GRCh37 uses special URL structure
+        url = f"{ENSEMBL_GRCH37_BASE}/release-{release}/variation/indexed_vep_cache/homo_sapiens_vep_{release}_GRCh37.tar.gz"
+        filename = f"homo_sapiens_vep_{release}_GRCh37.tar.gz"
+    else:
+        url = f"{ENSEMBL_BASE}/release-{release}/variation/indexed_vep_cache/homo_sapiens_vep_{release}_{assembly}.tar.gz"
+        filename = f"homo_sapiens_vep_{release}_{assembly}.tar.gz"
+    
+    return {
+        'filename': filename,
+        'url': url,
+        'description': f'Ensembl-VEP cache for {assembly} (release {release})',
+        'md5': None,
+        'size_mb': 18000,  # ~18 GB compressed (approximate)
     }
 
 
@@ -288,8 +315,17 @@ Examples:
   # Download Ensembl files for GRCh38
   python download_data.py --datasets ensembl-gtf ensembl-cds ensembl-genome --assembly GRCh38 --ensembl-release 112
   
+  # Download Ensembl VEP cache for GRCh38
+  python download_data.py --datasets ensembl-vep --assembly GRCh38 --ensembl-release 112
+  
   # Download Ensembl files for GRCh37
   python download_data.py --datasets ensembl-gtf ensembl-cds --assembly GRCh37 --ensembl-release 87
+  
+  # Download all core Ensembl files (GTF, CDS, genome - excludes VEP cache)
+  python download_data.py --datasets ensembl-all --assembly GRCh38
+  
+  # Download Ensembl files including VEP cache
+  python download_data.py --datasets ensembl-all ensembl-vep --assembly GRCh38
   
   # Force re-download even if files exist
   python download_data.py --force
@@ -309,7 +345,7 @@ Examples:
     parser.add_argument(
         '--datasets',
         nargs='+',
-        choices=list(DATASETS.keys()) + ['ensembl-gtf', 'ensembl-cds', 'ensembl-genome', 'ensembl-all'],
+        choices=list(DATASETS.keys()) + ['ensembl-gtf', 'ensembl-cds', 'ensembl-genome', 'ensembl-vep', 'ensembl-all'],
         default=None,
         help='Specific datasets to download (default: static datasets only)'
     )
@@ -361,6 +397,8 @@ Examples:
             dynamic_datasets['ensembl-cds'] = get_ensembl_cds_info(assembly, ensembl_release)
         if 'ensembl-genome' in args.datasets or 'ensembl-all' in args.datasets:
             dynamic_datasets['ensembl-genome'] = get_ensembl_genome_info(assembly, ensembl_release)
+        if 'ensembl-vep' in args.datasets:
+            dynamic_datasets['ensembl-vep'] = get_ensembl_vep_info(assembly, ensembl_release)
     
     # Merge static and dynamic datasets
     all_datasets = {**DATASETS, **dynamic_datasets}
@@ -391,8 +429,12 @@ Examples:
         print(f"  Description: Ensembl reference genome (FASTA)")
         print(f"  Example: Homo_sapiens.GRCh38.112.dna.primary_assembly.fa.gz")
         print(f"  Size: ~900 MB")
+        print("\nensembl-vep:")
+        print(f"  Description: Ensembl-VEP cache (indexed)")
+        print(f"  Example: homo_sapiens_vep_112_GRCh38.tar.gz")
+        print(f"  Size: ~18 GB")
         print("\nensembl-all:")
-        print(f"  Description: All Ensembl files (GTF + CDS + genome)")
+        print(f"  Description: All core Ensembl files (GTF + CDS + genome, excludes VEP cache)")
         
         return 0
     
