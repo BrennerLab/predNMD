@@ -36,6 +36,9 @@ python download_data.py --list
 
 # e.g., Download the LOEUF scores, hg38 phyloP conservation scores, and all three GRCh38 Ensembl reference files (release 104)
 python download_data.py --datasets gnomad phylop-hg38 ensembl-all --assembly GRCh38 --ensembl-release 104
+
+# You can also use download_data.py to download the Ensembl VEP cache, e.g.,
+python download_data.py --datasets ensembl-vep --assembly GRCh38 --ensembl-release 104 --data-dir {OUTPUT_DATA_DIR}
 ```
 
 ### Install TranslationAI 
