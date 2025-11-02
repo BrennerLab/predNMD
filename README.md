@@ -39,6 +39,7 @@ python download_data.py --datasets gnomad phylop-hg38 ensembl-all --assembly GRC
 
 # You can also use download_data.py to download the Ensembl VEP cache, e.g.,
 python download_data.py --datasets ensembl-vep --assembly GRCh38 --ensembl-release 104 --data-dir {OUTPUT_DATA_DIR}
+tar -xvf {OUTPUT_DATA_DIR}/homo_sapiens_vep_104_GRCh37.tar.gz # decompress the downloaded cache
 ```
 
 ### Install TranslationAI 
