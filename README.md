@@ -197,12 +197,14 @@ runtime:
 docker run \
 -v $(pwd):/data \ # Mount your local data path to the data path within the docker container
 -v {PATH_TO_VEP_CACHE}:/VEP_cache \ # Replace {PATH_TO_VEP_CACHE} with the absolute path to VEP cache downloaded on your local machine
-yaqisu/prednmd:latest deepnmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml
+yaqisu/prednmd:latest \
+deepnmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml # you can specify different options as you need
 
 # If your input is VEP-annotated VCF
 docker run \
 -v $(pwd):/data \ # Mount your local data path to the data path within the docker container
-yaqisu/prednmd:latest deepnmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml
+yaqisu/prednmd:latest \
+deepnmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml # you can specify different options as you need
 ```
 
 ## Output Files
