@@ -98,7 +98,7 @@ model:
 
 # Runtime settings
 runtime:
-  threads: 32
+  threads: 32 # change to the number of threads you want to use
   canonical_only: true # when set to "true", each variant will only be assigned to one transcript
                        # (with canonical transcript being prioritized), set to "false" if you want
                        # to include all potential isoforms containing the variants, which means
