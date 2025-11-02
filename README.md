@@ -67,8 +67,6 @@ conda install bioconda::bcftools
 
 3. Ensembl VEP: please refer to [Ensembl VEP documentation](http://useast.ensembl.org/info/docs/tools/vep/script/vep_download.html) for guidance of downloading and installing Ensembl VEP
 
-## Alternative option: using Docker (TODO)
-**NOTE the input must be Ensembl VEP annotated file if using Docker, cause Ensembl VEP (especially its cache) is too large to be included in the docker image**
 
 ## Configuration
 
@@ -91,7 +89,7 @@ annotation:
 # Ensembl VEP configuration (REQUIRED if using Ensembl VEP)
 vep:
   vep_path: /path/to/vep #path to vep executable
-  cache_dir: /path/to/.vep #path to vep cache
+  cache_dir: /path/to/.vep #path to vep cache, can be downloaded via download_data.py
   assembly: GRCh37  # or GRCh38
 
 # Machine learning model (REQUIRED)
@@ -155,6 +153,55 @@ runtime:
   deepnmd init-config -o config.yaml
   ```
 
+
+## Alternative option: using pre-built Docker image 
+
+1. Pull the Docker image
+```bash
+docker pull yaqisu/prednmd:latest
+```
+
+2. Gather all your data files (including input and all reference files) into one directory, assuming it's {DATA_DIR} for the following example
+
+3. Under {DATA_DIR} that contains all your data files, create a `config.yaml` as below. Please replace the {} parts with the actual **file name** under your {DATA_DIR}.
+```yaml
+reference:
+  gtf_file: /data/{Homo_sapiens.GRCh37.87.gtf}
+  genome_fasta: /data/{Homo_sapiens.GRCh37.dna.primary_assembly.fa}
+  cds_fasta: /data/{GRCh37.CDS.fa}
+
+annotation:
+  gnomad_file: /data/{gnomad.v4.1.constraint_metrics.tsv}
+  phylop_bigwig: /data/{hg19.100way.phyloP100way.bw}
+  m6a_file: /app/data/hg19_m6A-Atlas_highRes_all.txt.gz # or change to /app/data/hg38_m6A-Atlas_highRes_all.txt.gz if using hg38 assembly
+  expression_file: /app/data/GTEx_mean_expression_per_gene.csv
+
+vep:
+  vep_path: /opt/ensembl-vep-release-104.3/vep 
+  cache_dir: /VEP_cache 
+  assembly: GRCh37  # or change to GRCh38
+
+model:
+  model_dir: /app/model
+
+runtime:
+  threads: 32 # change to the number of threads you want to use on your local machine
+  canonical_only: true # set to false if you want to include all transcripts
+```
+
+4. Under {DATA_DIR}, run prednmd via docker, e.g.,:
+```bash
+# If your input is VCF file unannotated by Ensembl VEP
+docker run \
+-v $(pwd):/data \ # Mount your local data path to the data path within the docker container
+-v {PATH_TO_VEP_CACHE}:/VEP_cache \ # Replace {PATH_TO_VEP_CACHE} with the absolute path to VEP cache downloaded on your local machine
+yaqisu/prednmd:latest deepnmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml
+
+# If your input is VEP-annotated VCF
+docker run \
+-v $(pwd):/data \ # Mount your local data path to the data path within the docker container
+yaqisu/prednmd:latest deepnmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml
+```
 
 ## Output Files
 
