@@ -128,7 +128,7 @@ runtime:
   deepnmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --gene BRCA1 # or --gene ENSG00000012048
   ```
   
-- By default, predNMD checks whether a SNV truly introduces a premature stop codon, even if it is annotated as “stop_gained” by Ensembl VEP. This helps prevent mismatches caused by differences between the reference genome and GTF used by VEP and those provided to predNMD. However, you can use `--skip-ptc-check' to skip the verification:
+- By default, predNMD checks whether a SNV truly introduces a premature stop codon, even if it is annotated as “stop_gained” by Ensembl VEP, and will also check whether the reference allele matches at the variant position. This helps prevent mismatches caused by differences between the reference genome and GTF used by VEP and those provided to predNMD. However, you can use `--skip-ptc-check' to skip these verifications:
   ```bash
   deepnmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --skip-ptc-check
   ```
