@@ -156,6 +156,8 @@ runtime:
 
 ## Alternative option: using pre-built Docker image 
 
+If any of the installation step failed and cannot be resolved, you can also use our pre-built Docker image as follows:
+
 1. Pull the Docker image
 ```bash
 docker pull yaqisu/prednmd:latest
