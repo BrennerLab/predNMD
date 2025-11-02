@@ -237,6 +237,10 @@ VCF file with added INFO fields:
 - `N_TERMINAL_PROB`: N-terminal truncation probability
 - `C_TERMINAL_PROB`: C-terminal truncation probability
 
+### Log files
+
+- `{OUTPUT_PREFIX}_prednmd.log`: standard output during running predNMD
+- `{OUTPUT_PREFIX}.feature_added.warnings.log`: all warning messages during feature calculation for each variant (e.g., potential reference allele mismatch, etc.)
 
 ## Input Requirements
 
