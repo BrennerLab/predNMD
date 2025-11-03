@@ -324,8 +324,7 @@ Workflow options:
                         Pre-computed predictions file (for --only-vcf-annotation)
 
 Output options:
-  --output-features     Output a separate feature table with all features and SHAP values (prediction table
-                        will only contain essential columns)
+  --output-features     Output a separate feature table with all features and SHAP values 
   --full-vcf-annotation
                         Add all features and SHAP values to VCF INFO field in addition to standard NMD annotations
 
