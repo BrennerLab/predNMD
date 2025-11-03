@@ -327,12 +327,10 @@ Output options:
   --output-features     Output a separate feature table with all features and SHAP values (prediction table
                         will only contain essential columns)
   --full-vcf-annotation
-                        Add all features and SHAP values (n_terminal_escape_contrib, c_terminal_escape_contrib,
-                        general_escape_contrib) to VCF INFO field in addition to standard NMD annotations
+                        Add all features and SHAP values to VCF INFO field in addition to standard NMD annotations
 
 Feature extraction options:
-  --skip-ptc-check      Skip PTC check for SNVs (NOT frameshifts) in step 3. Assumes all SNVs annotated as
-                        stop_gained create PTCs.
+  --skip-ptc-check      Skip PTC check for SNVs and also skip check for reference allele matching in step 3. 
   --af-column COLUMN    Specify which AF column to use in step 3 (default: auto-detect gnomAD_AF or gnomADg_AF)
 
 File retention options:
