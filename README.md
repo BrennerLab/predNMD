@@ -400,7 +400,7 @@ If you use NMD in your research, please cite:
 
 ## License
 
-MIT License - see LICENSE file for details
+**TBD: need to double check the university policy**
 
 
 ## Contact
