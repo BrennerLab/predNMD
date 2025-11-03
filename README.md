@@ -36,6 +36,10 @@ python download_data.py --list
 
 # e.g., Download the LOEUF scores, hg38 phyloP conservation scores, and all three GRCh38 Ensembl reference files (release 104)
 python download_data.py --datasets gnomad phylop-hg38 ensembl-all --assembly GRCh38 --ensembl-release 104
+
+# You can also use download_data.py to download the Ensembl VEP cache, e.g.,
+python download_data.py --datasets ensembl-vep --assembly GRCh38 --ensembl-release 104 --data-dir {OUTPUT_DATA_DIR}
+tar -xzf {OUTPUT_DATA_DIR}/homo_sapiens_vep_104_GRCh37.tar.gz # decompress the downloaded cache
 ```
 
 ### Install TranslationAI 
@@ -63,8 +67,6 @@ conda install bioconda::bcftools
 
 3. Ensembl VEP: please refer to [Ensembl VEP documentation](http://useast.ensembl.org/info/docs/tools/vep/script/vep_download.html) for guidance of downloading and installing Ensembl VEP
 
-## Alternative option: using Docker (TODO)
-**NOTE the input must be Ensembl VEP annotated file if using Docker, cause Ensembl VEP (especially its cache) is too large to be included in the docker image**
 
 ## Configuration
 
@@ -87,7 +89,7 @@ annotation:
 # Ensembl VEP configuration (REQUIRED if using Ensembl VEP)
 vep:
   vep_path: /path/to/vep #path to vep executable
-  cache_dir: /path/to/.vep #path to vep cache
+  cache_dir: /path/to/.vep #path to vep cache, can be downloaded via download_data.py
   assembly: GRCh37  # or GRCh38
 
 # Machine learning model (REQUIRED)
@@ -96,7 +98,7 @@ model:
 
 # Runtime settings
 runtime:
-  threads: 32
+  threads: 32 # change to the number of threads you want to use
   canonical_only: true # when set to "true", each variant will only be assigned to one transcript
                        # (with canonical transcript being prioritized), set to "false" if you want
                        # to include all potential isoforms containing the variants, which means
@@ -126,7 +128,7 @@ runtime:
   deepnmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --gene BRCA1 # or --gene ENSG00000012048
   ```
   
-- By default, predNMD checks whether a SNV truly introduces a premature stop codon, even if it is annotated as “stop_gained” by Ensembl VEP. This helps prevent mismatches caused by differences between the reference genome and GTF used by VEP and those provided to predNMD. However, you can use `--skip-ptc-check' to skip the verification:
+- By default, predNMD checks whether a SNV truly introduces a premature stop codon, even if it is annotated as “stop_gained” by Ensembl VEP, and will also check whether the reference allele matches at the variant position. This helps prevent mismatches caused by differences between the reference genome and GTF used by VEP and those provided to predNMD. However, you can use `--skip-ptc-check' to skip these verifications:
   ```bash
   deepnmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --skip-ptc-check
   ```
@@ -151,6 +153,59 @@ runtime:
   deepnmd init-config -o config.yaml
   ```
 
+
+## Alternative option: using pre-built Docker image 
+
+If any of the installation step fails and cannot be resolved, you can also directly use our pre-built Docker image as follows:
+
+1. Pull the Docker image
+```bash
+docker pull yaqisu/prednmd:latest
+```
+
+2. Gather all your data files (including input and all reference files) into one directory, assuming it's {DATA_DIR} for the following example
+
+3. Under {DATA_DIR} that contains all your data files, create a `config.yaml` as below. Please replace the {} parts with the actual **file name** under your {DATA_DIR}.
+```yaml
+reference:
+  gtf_file: /data/{Homo_sapiens.GRCh37.87.gtf}
+  genome_fasta: /data/{Homo_sapiens.GRCh37.dna.primary_assembly.fa}
+  cds_fasta: /data/{GRCh37.CDS.fa}
+
+annotation:
+  gnomad_file: /data/{gnomad.v4.1.constraint_metrics.tsv}
+  phylop_bigwig: /data/{hg19.100way.phyloP100way.bw}
+  m6a_file: /app/data/hg19_m6A-Atlas_highRes_all.txt.gz # or change to /app/data/hg38_m6A-Atlas_highRes_all.txt.gz if using hg38 assembly
+  expression_file: /app/data/GTEx_mean_expression_per_gene.csv
+
+vep:
+  vep_path: /opt/ensembl-vep-release-104.3/vep 
+  cache_dir: /VEP_cache 
+  assembly: GRCh37  # or change to GRCh38
+
+model:
+  model_dir: /app/model
+
+runtime:
+  threads: 32 # change to the number of threads you want to use on your local machine
+  canonical_only: true # set to false if you want to include all transcripts
+```
+
+4. Under {DATA_DIR}, run prednmd via docker, e.g.,:
+```bash
+# If your input is VCF file unannotated by Ensembl VEP
+docker run \
+-v $(pwd):/data \ # Mount your local data path to the data path within the docker container
+-v {PATH_TO_VEP_CACHE}:/VEP_cache \ # Replace {PATH_TO_VEP_CACHE} with the absolute path to VEP cache downloaded on your local machine
+yaqisu/prednmd:latest \
+deepnmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml # you can specify different options as you need
+
+# If your input is VEP-annotated VCF
+docker run \
+-v $(pwd):/data \ # Mount your local data path to the data path within the docker container
+yaqisu/prednmd:latest \
+deepnmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml # you can specify different options as you need
+```
 
 ## Output Files
 
@@ -182,6 +237,10 @@ VCF file with added INFO fields:
 - `N_TERMINAL_PROB`: N-terminal truncation probability
 - `C_TERMINAL_PROB`: C-terminal truncation probability
 
+### Log files
+
+- `{OUTPUT_PREFIX}_prednmd.log`: standard output during running predNMD
+- `{OUTPUT_PREFIX}.feature_added.warnings.log`: all warning messages during feature calculation for each variant (e.g., potential reference allele mismatch, etc.)
 
 ## Input Requirements
 
@@ -268,12 +327,10 @@ Output options:
   --output-features     Output a separate feature table with all features and SHAP values (prediction table
                         will only contain essential columns)
   --full-vcf-annotation
-                        Add all features and SHAP values (n_terminal_escape_contrib, c_terminal_escape_contrib,
-                        general_escape_contrib) to VCF INFO field in addition to standard NMD annotations
+                        Add all features and SHAP values to VCF INFO field in addition to standard NMD annotations
 
 Feature extraction options:
-  --skip-ptc-check      Skip PTC check for SNVs (NOT frameshifts) in step 3. Assumes all SNVs annotated as
-                        stop_gained create PTCs.
+  --skip-ptc-check      Skip PTC check for SNVs and also skip check for reference allele matching in step 3. 
   --af-column COLUMN    Specify which AF column to use in step 3 (default: auto-detect gnomAD_AF or gnomADg_AF)
 
 File retention options:
