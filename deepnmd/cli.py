@@ -79,14 +79,14 @@ For detailed options, run: deepnmd run -h
     # Output options
     output_group = run_parser.add_argument_group('Output options')
     output_group.add_argument('--output-features', action='store_true',
-                            help='Output a separate feature table with all features and SHAP values (prediction table will only contain essential columns)')
+                            help='Output a separate feature table with all features and SHAP values')
     output_group.add_argument('--full-vcf-annotation', action='store_true',
-                            help='Add all features and SHAP values (n_terminal_escape_contrib, c_terminal_escape_contrib, general_escape_contrib) to VCF INFO field in addition to standard NMD annotations')
+                            help='Add all features and SHAP values to VCF INFO field in addition to standard NMD annotations')
     
     # Feature extraction options
     feature_group = run_parser.add_argument_group('Feature extraction options')
     feature_group.add_argument('--skip-ptc-check', action='store_true',
-                             help='Skip PTC check for SNVs (NOT frameshifts) in step 3. Assumes all SNVs annotated as stop_gained create PTCs.')
+                             help='Skip PTC check for SNVs and also skip check for reference allele matching in step 3.')
     feature_group.add_argument('--af-column', type=str, metavar='COLUMN',
                              help='Specify which AF column to use in step 3 (default: auto-detect gnomAD_AF or gnomADg_AF)')
     
