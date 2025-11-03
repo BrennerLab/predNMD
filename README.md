@@ -324,8 +324,7 @@ Workflow options:
                         Pre-computed predictions file (for --only-vcf-annotation)
 
 Output options:
-  --output-features     Output a separate feature table with all features and SHAP values (prediction table
-                        will only contain essential columns)
+  --output-features     Output a separate feature table with all features and SHAP values 
   --full-vcf-annotation
                         Add all features and SHAP values to VCF INFO field in addition to standard NMD annotations
 
@@ -376,13 +375,12 @@ Runtime options:
 - Produces truncated protein missing N-terminus
 
 **C_terminal (C-terminal rescue):**
-- Variant follows 50-nucleotide rule (>50nt from last exon junction)
-- Escapes NMD due to favorable exon structure
+- Variant does not trigger NMD
 - Produces truncated protein missing C-terminus
 
 **Uncertain:**
-- Both mechanisms contribute equally
-- Or neither mechanism shows clear positive contribution
+- Both mechanisms (C_terminal or N_terminal) contribute equally
+- Or neither mechanism shows clear positive contribution to not triggering NMD
 
 ### SHAP Contributions
 
@@ -397,12 +395,12 @@ SHAP values explain each prediction:
 If you use NMD in your research, please cite:
 
 ```
-[Paper citation here TODO]
+[**Paper citation here TODO**]
 ```
 
 ## License
 
-MIT License - see LICENSE file for details
+**TBD: need to double check the university policy**
 
 
 ## Contact
