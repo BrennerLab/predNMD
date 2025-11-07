@@ -286,8 +286,9 @@ def calculate_mechanism_probabilities(escape_contributions):
     n_contrib = escape_contributions['n_terminal_contrib']
     c_contrib = escape_contributions['c_terminal_contrib']
     
-    # Use raw contributions (not clipped to positive)
-    scores = np.stack([n_contrib, c_contrib], axis=1)
+    # Use raw contributions adjusted by temperature for softmax
+    temperature = 0.1
+    scores = np.stack([n_contrib / temperature, c_contrib / temperature], axis=1)
     
     # Apply softmax with numerical stability
     exp_scores = np.exp(scores - scores.max(axis=1, keepdims=True))
