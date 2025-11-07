@@ -5,6 +5,8 @@
 
 **NMD(Name TBD)** is a comprehensive Python package for predicting if given nonsense or frameshift variants would trigger NMD. It uses a Random Forest model trained from various data sources, and for those variants predicted to not trigger NMD, the software can further predict if the variant would lead to N- or C-terminal truncated protein utilizing SHAP analysis.
 
+## TODO: Develop the website for querying precomputed results
+
 ## Installation
 
 ### Install NMD
