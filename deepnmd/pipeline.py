@@ -125,7 +125,7 @@ class NMDPipeline:
         required_by_step = {
             1: [('reference', 'gtf_file')],
             2: [('vep', 'cache_dir')],
-            3: [('reference', 'gtf_file'), ('reference', 'genome_fasta'), ('reference', 'cds_fasta'),
+            3: [('reference', 'gtf_file'), ('reference', 'genome_fasta'), #('reference', 'cds_fasta'),
                 ('annotation', 'm6a_file'), ('annotation', 'expression_file')],
             4: [('annotation', 'gnomad_file')],
             5: [('annotation', 'phylop_bigwig')],
