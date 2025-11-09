@@ -332,15 +332,23 @@ class NMDPipeline:
         if start_step <= 3 <= end_step:
             feature_txt = self.output_dir / f"{self.sample_name}.feature_added.txt"
             translationai_fasta = self.output_dir / f"{self.sample_name}.translationAI.fa"
-            
-            feature_args = [
-                current_file,
-                self.config.get('reference', 'gtf_file'),
-                self.config.get('reference', 'genome_fasta'),
-                '--cds-fasta', self.config.get('reference', 'cds_fasta'),
-                '-o', feature_txt,
-                '--translationAI-fasta', translationai_fasta
-            ]
+            if self.config.get('reference', 'cds_fasta') is None:
+                feature_args = [
+                    current_file,
+                    self.config.get('reference', 'gtf_file'),
+                    self.config.get('reference', 'genome_fasta'),
+                    '-o', feature_txt,
+                    '--translationAI-fasta', translationai_fasta
+                ]
+            else:
+                feature_args = [
+                    current_file,
+                    self.config.get('reference', 'gtf_file'),
+                    self.config.get('reference', 'genome_fasta'),
+                    '--cds-fasta', self.config.get('reference', 'cds_fasta'),
+                    '-o', feature_txt,
+                    '--translationAI-fasta', translationai_fasta
+                ]
             
             # Optional annotations
             if self.config.get('annotation', 'm6a_file'):
