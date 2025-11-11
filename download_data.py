@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Download required datasets for deepNMD
+Download required datasets for predNMD
 
-This script downloads large annotation files needed for deepNMD analysis.
+This script downloads large annotation files needed for predNMD analysis.
 
 Features:
 - Static datasets: gnomAD constraint metrics, phyloP conservation scores
@@ -302,7 +302,7 @@ def get_data_directory():
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Download required datasets for deepNMD',
+        description='Download required datasets for predNMD',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -468,7 +468,7 @@ Examples:
     data_dir.mkdir(parents=True, exist_ok=True)
     
     print("=" * 80)
-    print("deepNMD Data Download")
+    print("predNMD Data Download")
     print("=" * 80)
     print(f"\nData directory: {data_dir.absolute()}")
     print(f"Datasets to download: {', '.join(datasets_to_download)}")
@@ -529,7 +529,7 @@ Examples:
                 if dataset_name.startswith('ensembl-'):
                     print(f"  {all_datasets[dataset_name]['filename']}")
         
-        print("\nYou can now run deepNMD with these annotation files.")
+        print("\nYou can now run predNMD with these annotation files.")
         return 0
 
 

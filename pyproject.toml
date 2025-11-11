@@ -3,7 +3,7 @@ requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "deepnmd"
+name = "prednmd"
 version = "1.0.0"
 description = "A comprehensive pipeline for predicting Nonsense-Mediated Decay (NMD) in genetic variants"
 readme = "README.md"
@@ -46,19 +46,19 @@ dev = [
 ]
 
 [project.scripts]
-deepnmd = "deepnmd.cli:main"
+prednmd = "prednmd.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/deepnmd"
-Documentation = "https://deepnmd.readthedocs.io"
-Repository = "https://github.com/yourusername/deepnmd.git"
-"Bug Tracker" = "https://github.com/yourusername/deepnmd/issues"
+Homepage = "https://github.com/yourusername/prednmd"
+Documentation = "https://prednmd.readthedocs.io"
+Repository = "https://github.com/yourusername/prednmd.git"
+"Bug Tracker" = "https://github.com/yourusername/prednmd/issues"
 
 [tool.setuptools]
-packages = ["deepnmd", "deepnmd.modules"]
+packages = ["prednmd", "prednmd.modules"]
 
 [tool.setuptools.package-data]
-deepnmd = ["*.yaml", "*.yml"]
+prednmd = ["*.yaml", "*.yml"]
 
 [tool.black]
 line-length = 100

@@ -3,8 +3,8 @@ include README.md
 include LICENSE
 
 # Include configuration templates
-include deepnmd/*.yaml
-include deepnmd/*.yml
+include prednmd/*.yaml
+include prednmd/*.yml
 
 # Include requirements
 include requirements.txt
