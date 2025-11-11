@@ -3,21 +3,20 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**NMD(Name TBD)** is a comprehensive Python package for predicting if given nonsense or frameshift variants would trigger NMD. It uses a Random Forest model trained from various data sources, and for those variants predicted to not trigger NMD, the software can further predict if the variant would lead to N- or C-terminal truncated protein utilizing SHAP analysis.
+**predNMD** is a comprehensive Python package for predicting if given nonsense or frameshift variants would trigger NMD. It uses a Random Forest model trained from various data sources, and for those variants predicted to not trigger NMD, the software can further predict if the variant would lead to N- or C-terminal truncated protein utilizing SHAP analysis.
 
-## TODO: Develop the website for querying precomputed results
 
 ## Installation
 
-### Install NMD
+### Install predNMD
 
 ```bash
 #It’s highly recommended to start a fresh environment to avoid potential dependency conflicts
-conda create -n NMD python=3.10 
-conda activate NMD
+conda create -n predNMD python=3.10 
+conda activate predNMD
 
-git clone https://github.com/yaqisu/NMD.git
-cd NMD
+git clone https://github.com/yaqisu/predNMD.git
+cd predNMD
 pip install .
 ```
 
@@ -46,7 +45,7 @@ tar -xzf {OUTPUT_DATA_DIR}/homo_sapiens_vep_104_GRCh37.tar.gz # decompress the d
 
 ### Install TranslationAI 
 
-**NOTE:** TranslationAI should be installed after NMD has been installed.
+**NOTE:** TranslationAI should be installed after predNMD has been installed.
 
 ```bash
 git clone https://github.com/rnasys/TranslationAI.git
@@ -112,47 +111,47 @@ runtime:
 
 - Basic usage
   ```bash
-  deepnmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml
+  prednmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml
   ```
 
 - If your input is VEP-annotated VCF, please make sure it includes annotation for allele frequency. By default, predNMD will look for "gnomAD_AF" or "gnomADg_AF", but you could specify which allele frequency in your VEP-annotated input you want to use by adding the option `--af-column`, e.g., if you want to use African population allele frequency from gnomAD:
   ```bash
-  deepnmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --af-column gnomADg_AFR_AF
+  prednmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --af-column gnomADg_AFR_AF
   ```
 
 - By default, predNMD will assign one transcript to each variant prioritized with canonical transcript, which means if your input is VEP-annotated VCF, it should contain the annotation for canonical transcripts (i.e., VEP should be run with `--canonical`). However, if you prefer to include all the transcript isoforms for each variant, you can run predNMD with `--no-canonical` (and in this case your VEP-annotated input file is not required to include the annotation for canonical transcripts):
   ```bash
-  deepnmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --no-canonical
+  prednmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --no-canonical
   ```
   
 - If you only want to analyze variants in a specific gene, you can specify the gene symbol or the Ensembl gene ID with `--gene`, e.g., for variants in BRCA1:
   ```bash
-  deepnmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --gene BRCA1 # or --gene ENSG00000012048
+  prednmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --gene BRCA1 # or --gene ENSG00000012048
   ```
   
 - By default, predNMD checks whether a SNV truly introduces a premature stop codon, even if it is annotated as “stop_gained” by Ensembl VEP, and will also check whether the reference allele matches at the variant position. This helps prevent mismatches caused by differences between the reference genome and GTF used by VEP and those provided to predNMD. However, you can use `--skip-ptc-check' to skip these verifications:
   ```bash
-  deepnmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --skip-ptc-check
+  prednmd run -i input.vcf -o output_dir -s output_prefix -c /path/to/config.yaml --skip-ptc-check
   ```
 
 - If you also want to output the feature table containing the calculated features for input variants in addition to the prediction results, you can use the `--output-features` option:
   ```
-  deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml --output-features
+  prednmd run -i input.vcf -o output_dir -c /path/to/config.yaml --output-features
   ```
 
 - By default, predNMD will only append the prediction results to the INFO field of the VCF file. If you also want to annotate the VCF file with all the calculated features as well as SHAP values, you can use the `--full-vcf-annotation` option:
   ```
-  deepnmd run -i input.vcf -o output_dir -c /path/to/config.yaml --full-vcf-annotation
+  prednmd run -i input.vcf -o output_dir -c /path/to/config.yaml --full-vcf-annotation
   ```
 
 - If you already have pre-computed features that can directly serve as input to the RF model (please refer to [Input Requirements](https://github.com/yaqisu/NMD/tree/main?tab=readme-ov-file#input-requirements) below for the format of the feature table), you can run predNMD with `--from-features`
   ```bash
-  deepnmd run -i features.txt -o output_dir -c /path/to/config.yaml --from-features
+  prednmd run -i features.txt -o output_dir -c /path/to/config.yaml --from-features
   ```
 
 - If you want to initialize a template config file
   ```bash
-  deepnmd init-config -o config.yaml
+  prednmd init-config -o config.yaml
   ```
 
 
@@ -200,14 +199,15 @@ docker run \
 -v $(pwd):/data \ # Mount your local data path to the data path within the docker container
 -v {PATH_TO_VEP_CACHE}:/VEP_cache \ # Replace {PATH_TO_VEP_CACHE} with the absolute path to VEP cache downloaded on your local machine
 yaqisu/prednmd:latest \
-deepnmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml # you can specify different options as you need
+prednmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml # you can specify different options as you need
 
 # If your input is VEP-annotated VCF
 docker run \
 -v $(pwd):/data \ # Mount your local data path to the data path within the docker container
 yaqisu/prednmd:latest \
-deepnmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml # you can specify different options as you need
+prednmd run -i /data/{YOUR_INPUT_VCF} -s {OUTPUT_PREFIX} -o /data/{OUTPUT_DIR_NAME} -c /data/config.yaml # you can specify different options as you need
 ```
+
 
 ## Output Files
 
@@ -295,8 +295,8 @@ NMD runs the following steps if starting from an unannotated VCF file:
 
 ## All command options
 ```bash
-deepnmd run -h
-usage: deepnmd run [-h] -i INPUT -o OUTPUT_DIR -s SAMPLE_NAME [-c CONFIG] [--skip-filtering] [--gene GENE]
+prednmd run -h
+usage: prednmd run [-h] -i INPUT -o OUTPUT_DIR -s SAMPLE_NAME [-c CONFIG] [--skip-filtering] [--gene GENE]
                    [--from-features] [--no-vcf-output] [--only-vcf-annotation] [--predictions-file FILE]
                    [--output-features] [--full-vcf-annotation] [--skip-ptc-check] [--af-column COLUMN]
                    [--keep-all] [--keep-filtered-vcf] [--gtf GTF_FILE] [--genome GENOME_FILE] [--cds CDS_FILE]
