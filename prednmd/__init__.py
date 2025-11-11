@@ -1,5 +1,5 @@
 """
-DeepNMD: A pipeline for predicting Nonsense-Mediated Decay (NMD) in genetic variants
+predNMD: A pipeline for predicting Nonsense-Mediated Decay (NMD) in genetic variants
 
 This package provides a comprehensive pipeline for:
 - Filtering VCF files for protein-coding regions

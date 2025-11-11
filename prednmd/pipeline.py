@@ -1,5 +1,5 @@
 """
-Main pipeline orchestrator for DeepNMD
+Main pipeline orchestrator for predNMD
 """
 
 import os
@@ -42,7 +42,7 @@ class NMDPipeline:
     
     def _setup_logging(self) -> logging.Logger:
         """Setup logging configuration"""
-        logger = logging.getLogger('deepnmd')
+        logger = logging.getLogger('predNMD')
         logger.setLevel(logging.INFO)
         
         # Console handler
@@ -50,7 +50,7 @@ class NMDPipeline:
         console_handler.setLevel(logging.INFO)
         
         # File handler
-        log_file = self.output_dir / f"{self.sample_name}_deepnmd.log"
+        log_file = self.output_dir / f"{self.sample_name}_prednmd.log"
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(logging.DEBUG)
         
@@ -218,7 +218,7 @@ class NMDPipeline:
             keep_files = []
         
         self.logger.info("=" * 70)
-        self.logger.info("DeepNMD Pipeline Started")
+        self.logger.info("predNMD Pipeline Started")
         self.logger.info("=" * 70)
         self.logger.info(f"Input file: {input_file}")
         self.logger.info(f"Sample: {self.sample_name}")
@@ -516,7 +516,7 @@ class NMDPipeline:
                 outputs['final_vcf'] = str(final_vcf)
         
         self.logger.info("=" * 70)
-        self.logger.info("DeepNMD Pipeline Completed Successfully!")
+        self.logger.info("predNMD Pipeline Completed Successfully!")
         self.logger.info("=" * 70)
         
         if 'final_vcf' in outputs:

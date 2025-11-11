@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Command-line interface for DeepNMD pipeline
+Command-line interface for predNMD pipeline
 """
 
 import argparse
@@ -8,46 +8,46 @@ import sys
 from pathlib import Path
 from .modules.filter_vcf_by_gene import is_vep_annotated, filter_vcf_by_csq
 
-from deepnmd import NMDPipeline, Config
+from prednmd import NMDPipeline, Config
 
 
 def create_parser():
     """Create argument parser"""
     parser = argparse.ArgumentParser(
-        description="DeepNMD: Predict Nonsense-Mediated Decay (NMD) in genetic variants",
+        description="predNMD: Predict Nonsense-Mediated Decay (NMD) in genetic variants",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Complete pipeline from raw VCF (VEP annotation will be auto-detected and run if needed)
-  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml
+  prednmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml
   
   # Filter for specific gene 
-  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --gene BRCA1
+  prednmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --gene BRCA1
   
   # Output separate feature table with all features and SHAP values
-  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --output-features
+  prednmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --output-features
   
   # Add all features and SHAP values to VCF INFO field
-  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --full-vcf-annotation
+  prednmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --full-vcf-annotation
   
   # Start from existing feature table
-  deepnmd run -i features.txt -o output_dir -s sample1 -c config.yaml --from-features
+  prednmd run -i features.txt -o output_dir -s sample1 -c config.yaml --from-features
   
   # Generate predictions only (no VCF output)
-  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --no-vcf-output
+  prednmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --no-vcf-output
   
   # Skip PTC check for SNVs (but not frameshifts) in step 3
-  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --skip-ptc-check
+  prednmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --skip-ptc-check
   
   # Specify custom AF column for step 3
-  deepnmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --af-column gnomADg_AF
+  prednmd run -i input.vcf.gz -o output_dir -s sample1 -c config.yaml --af-column gnomADg_AF
   
 
   
   # Generate template config file
-  deepnmd init-config -o config.yaml
+  prednmd init-config -o config.yaml
 
-For detailed options, run: deepnmd run -h
+For detailed options, run: prednmd run -h
         """
     )
     
@@ -130,11 +130,11 @@ For detailed options, run: deepnmd run -h
     # Initialize config
     init_parser = subparsers.add_parser('init-config', 
                                        help='Generate template configuration file')
-    init_parser.add_argument('-o', '--output', default='deepnmd_config.yaml',
+    init_parser.add_argument('-o', '--output', default='config.yaml',
                            help='Output configuration file')
     
     # Version
-    parser.add_argument('--version', action='version', version='DeepNMD 1.0.0')
+    parser.add_argument('--version', action='version', version='predNMD 1.0.0')
     
     return parser
 
@@ -302,7 +302,7 @@ def cmd_run(args):
 
 def cmd_init_config(args):
     """Generate template configuration file"""
-    template = """# DeepNMD Configuration File
+    template = """# predNMD Configuration File
 # Edit this file with your specific paths and settings
 
 # Ensembl reference files (REQUIRED)

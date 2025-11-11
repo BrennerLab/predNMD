@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gene filtering module for deepNMD
+Gene filtering module for predNMD
 
 """
 

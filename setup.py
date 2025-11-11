@@ -1,5 +1,5 @@
 """
-Setup configuration for deepNMD with data download support
+Setup configuration for predNMD with data download support
 """
 
 from setuptools import setup, find_packages
@@ -31,7 +31,7 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     package_data={
-        'deepnmd': [
+        'prednmd': [
             'data/*',
             'models/*.joblib',
             'models/*.json',
@@ -52,8 +52,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'deepnmd=deepnmd.cli:main',
-            'deepnmd-download-data=download_data:main',
+            'prednmd=prednmd.cli:main',
+            'prednmd-download-data=download_data:main',
         ],
     },
     python_requires='>=3.8',

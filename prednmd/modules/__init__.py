@@ -1,5 +1,5 @@
 """
-Individual pipeline modules for DeepNMD
+Individual pipeline modules for predNMD
 """
 
 # Import main functions from each module for easier access

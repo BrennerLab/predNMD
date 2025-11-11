@@ -1,5 +1,5 @@
 """
-Configuration management for DeepNMD pipeline
+Configuration management for predNMD pipeline
 """
 
 import os
@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any
 
 
 class Config:
-    """Configuration manager for DeepNMD pipeline"""
+    """Configuration manager for predNMD pipeline"""
     
     def __init__(self, config_file: Optional[str] = None):
         """
