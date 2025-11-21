@@ -68,50 +68,42 @@ class NMDPipeline:
     
     def _detect_input_type(self, input_file: str) -> str:
         """
-        Detect the type of input file
+        Detect the type of input file by examining its content
         
         Returns:
-            'raw_vcf', 'vep_vcf', 'vep_tab_extra', 'vep_tab_standard', or 'feature_table'
+            'raw_vcf', 'vep_vcf', or 'feature_table'
         """
-        # Check if it's a feature table (TSV/TXT)
-        if input_file.endswith('.txt') or input_file.endswith('.tsv'):
-            # Check if it's actually a VEP tab-delimited file
-            try:
-                with open(input_file, 'r') as f:
-                    first_line = f.readline()
-                    # VEP tab files have specific headers
-                    if '#Uploaded_variation' in first_line or 'Uploaded_variation' in first_line:
-                        if '\tExtra' in first_line or first_line.rstrip().endswith('Extra'):
-                            return 'vep_tab_extra'
-                        else:
-                            return 'vep_tab_standard'
-                # Otherwise it's a feature table
-                return 'feature_table'
-            except:
-                return 'feature_table'
-       
-        else:
-            # It's a VCF file (could be .vcf, .vcf.gz, etc.)
-            # Check for VEP annotation in VCF
-            try:
-                if input_file.endswith('.gz'):
-                    import gzip
-                    with gzip.open(input_file, 'rt') as f:
-                        for line in f:
-                            if line.startswith('##INFO=<ID=CSQ'):
-                                return 'vep_vcf'
-                            if not line.startswith('#'):
-                                break
-                else:
-                    with open(input_file, 'r') as f:
-                        for line in f:
-                            if line.startswith('##INFO=<ID=CSQ'):
-                                return 'vep_vcf'
-                            if not line.startswith('#'):
-                                break
-                return 'raw_vcf'
-            except:
+        try:
+            # Open file (handle gzipped files)
+            if input_file.endswith('.gz'):
+                import gzip
+                opener = lambda f: gzip.open(f, 'rt')
+            else:
+                opener = lambda f: open(f, 'r')
+            
+            with opener(input_file) as f:
+                first_line = f.readline()
+                
+                # Check for VCF format
+                if first_line.startswith('##fileformat=VCF'):
+                    # It's a VCF file - check if VEP-annotated
+                    for line in f:
+                        if line.startswith('##INFO=<ID=CSQ'):
+                            return 'vep_vcf'
+                        if not line.startswith('#'):
+                            break
+                    return 'raw_vcf'
+                
+                # Check for tab-delimited feature table
+                # Feature tables should have multiple tab-separated columns
+                elif '\t' in first_line:
+                    return 'feature_table'
+                
                 return 'unknown'
+
+        except Exception as e:
+            self.logger.warning(f"Error detecting input file type: {e}")
+            return 'unknown'
   
     
     def _validate_config_for_steps(self, start_step: int, end_step: int):
@@ -240,16 +232,32 @@ class NMDPipeline:
         input_type = self._detect_input_type(input_file)
         self.logger.info(f"Detected input file type: {input_type}")
         
+        # Validate input type
+        valid_input_types = ['raw_vcf', 'vep_vcf', 'feature_table']
+        if input_type not in valid_input_types:
+            error_msg = f"Unknown or unsupported input file type: {input_type}. "
+            error_msg += f"Supported types: VCF files or feature tables (.txt, .tsv)"
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # Validate that feature_table input doesn't start from early steps
+        if input_type == 'feature_table' and start_step < 4:
+            error_msg = f"It seems you've input a tab-delimited file."
+            error_msg += f"If it's a feature table, please run predNMD with '--from-features'"
+            error_msg += f"Otherwise, please provide an input in VCF format."
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
+        
         # Auto-adjust start_step based on input type if starting from step 1 or 2
         if start_step <= 2:
-            if input_type in ['vep_vcf', 'vep_tab_extra', 'vep_tab_standard']:
+            if input_type == 'vep_vcf':
                 # Input is already VEP-annotated, skip VEP annotation step
                 if start_step == 1:
-                    self.logger.info("Input is VEP-annotated. Skipping protein-coding filter (Step 1) and VEP annotation (Step 2).")
+                    self.logger.info("Input is VEP-annotated VCF. Skipping protein-coding filter (Step 1) and VEP annotation (Step 2).")
                     self.logger.info("Starting from Step 3 (feature extraction).")
                     start_step = 3
                 elif start_step == 2:
-                    self.logger.info("Input is VEP-annotated. Skipping VEP annotation (Step 2).")
+                    self.logger.info("Input is VEP-annotated VCF. Skipping VEP annotation (Step 2).")
                     self.logger.info("Starting from Step 3 (feature extraction).")
                     start_step = 3
             else:
@@ -498,8 +506,6 @@ class NMDPipeline:
                     vcf_args.append('--full-annotation')
                     # If we have separate features file, use it instead
                     if output_features and 'features_txt_output' in outputs:
-                        # We need to merge predictions with features for full annotation
-                        # For now, just note this in the log
                         self.logger.info("Full VCF annotation requested: all features and SHAP values will be added to VCF")
                     else:
                         self.logger.info("Full VCF annotation requested: all features and SHAP values will be added to VCF")
