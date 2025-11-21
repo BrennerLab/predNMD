@@ -2,7 +2,7 @@
 """
 PTC (Premature Termination Codon) Analyzer for VEP output - WITH CAI, m6A, DOWNSTREAM AUG, GENE EXPRESSION, AND TRANSLATIONAI FASTA OUTPUT
 Analyzes variants in protein-coding regions to identify PTCs and calculate various features
-Supports multiple VEP output formats: VCF with CSQ, tab-delimited with Extra column, and standard tab-delimited
+Supports VCF format with CSQ annotations only
 
 """
 
@@ -611,17 +611,12 @@ def load_gene_expression(expression_file):
 
 
 def detect_vep_format(vep_file):
-    """Detect the format of VEP output file"""
+    """Detect the format of VEP output file - now only supports VCF"""
     with open(vep_file, 'r') as f:
         for line in f:
             if line.startswith('##fileformat=VCF'):
                 return 'vcf'
-            elif line.startswith('#') and not line.startswith('##'):
-                if '\tExtra' in line or line.endswith('Extra\n'):
-                    return 'extra'
-                else:
-                    return 'standard'
-    return 'standard'
+    raise ValueError("Input file is not in VCF format. Only VCF format with CSQ annotations is supported.")
 
 
 def passes_consequence_filter(consequence_str):
@@ -708,91 +703,6 @@ def parse_vcf_csq_format(vep_file):
     return pd.DataFrame(records) if records else pd.DataFrame()
 
 
-def parse_extra_column_format(vep_file):
-    """Parse tab-delimited format with Extra column - WITH PRE-FILTERING"""
-    records = []
-    header = None
-    
-    print("  Pre-filtering for stop_gained/frameshift_variant consequences...")
-    
-    with open(vep_file, 'r') as f:
-        for line in f:
-            if line.startswith('#') and not line.startswith('##'):
-                header = line.lstrip('#').strip().split('\t')
-            elif not line.startswith('#'):
-                if header is None:
-                    continue
-                
-                fields = line.strip().split('\t')
-                if len(fields) != len(header):
-                    continue
-                
-                record = {}
-                for i, field_name in enumerate(header):
-                    record[field_name] = fields[i]
-                
-                # PRE-FILTER: Check consequence
-                if 'Consequence' in record:
-                    if not passes_consequence_filter(record['Consequence']):
-                        continue
-                
-                # PRE-FILTER: Check biotype if available
-                if 'BIOTYPE' in record:
-                    biotype_ok = passes_biotype_filter(record['BIOTYPE'])
-                    if biotype_ok is False:
-                        continue
-                
-                # Parse Extra column
-                if 'Extra' in record and record['Extra'] != '-':
-                    extra_pairs = record['Extra'].split(';')
-                    for pair in extra_pairs:
-                        if '=' in pair:
-                            key, value = pair.split('=', 1)
-                            record[key.strip()] = value.strip()
-                
-                records.append(record)
-    
-    return pd.DataFrame(records) if records else pd.DataFrame()
-
-
-def parse_standard_format(vep_file):
-    """Parse standard tab-delimited format - WITH PRE-FILTERING"""
-    records = []
-    header = None
-    
-    print("  Pre-filtering for stop_gained/frameshift_variant consequences...")
-    
-    with open(vep_file, 'r') as f:
-        for line in f:
-            if line.startswith('#') and not line.startswith('##'):
-                header = line.lstrip('#').strip().split('\t')
-            elif not line.startswith('#'):
-                if header is None:
-                    continue
-                
-                fields = line.strip().split('\t')
-                if len(fields) != len(header):
-                    continue
-                
-                record = {}
-                for i, field_name in enumerate(header):
-                    record[field_name] = fields[i]
-                
-                # PRE-FILTER: Check consequence
-                if 'Consequence' in record:
-                    if not passes_consequence_filter(record['Consequence']):
-                        continue
-                
-                # PRE-FILTER: Check biotype if available
-                if 'BIOTYPE' in record:
-                    biotype_ok = passes_biotype_filter(record['BIOTYPE'])
-                    if biotype_ok is False:
-                        continue
-                
-                records.append(record)
-    
-    return pd.DataFrame(records) if records else pd.DataFrame()
-
 
 def find_variant_induced_ptc(original_seq, modified_seq, variant_cds_pos):
     """Find variant-induced PTC in modified sequence"""
@@ -818,7 +728,7 @@ def apply_variant_to_sequence(ref_seq, variant_pos, ref_allele, alt_allele, supp
     """Apply variant to sequence and return modified sequence"""
     pos_0based = variant_pos - 1
     
-    if ref_seq[pos_0based:pos_0based+len(ref_allele)] != ref_allele:
+    if ref_allele and ref_seq[pos_0based:pos_0based+len(ref_allele)] != ref_allele:
         if not suppress_warnings:
             print(f"Warning: Reference allele does not match at position {variant_pos}. Expected {ref_allele}, found {ref_seq[pos_0based:pos_0based+len(ref_allele)]}")
         return None
@@ -1253,7 +1163,7 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
         chrom = chrom[3:]
     
     ref_allele = safe_extract_value(row, 'REF_ALLELE') or safe_extract_value(row, 'REF')
-    alt_allele = allele
+    alt_allele = allele  # This is from VEP's Allele field, which is ALREADY anchor-stripped
     
     if not ref_allele and uploaded_variation and '/' in uploaded_variation:
         try:
@@ -1271,6 +1181,21 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
         ref_allele = ''
     if alt_allele == '-':
         alt_allele = ''
+    VCF_ref_allele = ref_allele
+    # ===== HANDLE VCF ANCHOR BASE =====
+    # Determine variant type and strip anchor from REF if needed
+    # VEP's Allele is already anchor-stripped, so we compare lengths to detect indels
+    
+    if len(ref_allele) == 1 and len(alt_allele) > 1:
+        # INSERTION: VCF has REF=single base (anchor)
+        # VEP Allele has the inserted sequence only (anchor stripped)
+        ref_allele = ''  # Empty after stripping anchor
+        
+    elif len(ref_allele) > 1:
+        # DELETION or DELINS: VCF has REF=anchor+deleted
+        # VEP Allele has the replacement sequence (or empty) with anchor stripped
+        ref_allele = ref_allele[1:]  # Strip anchor from REF
+        
     
     transcript_with_version = None
     transcript_id_base = transcript_id.split('.')[0]
@@ -1361,6 +1286,7 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
     ref_mismatch = False
     ref_mismatch_msg = None
     try:
+        # Apply variant using VEP's anchor-stripped alleles and position
         if transcript.strand == '-':
             ref_rc = str(Seq(ref_allele).reverse_complement()) if ref_allele else ''
             alt_rc = str(Seq(alt_allele).reverse_complement()) if alt_allele else ''
@@ -1434,10 +1360,10 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
             result = {
                 'CHR': chrom,
                 'POS': pos,
-                'REF_ALLELE': ref_allele,
-                'ALT_ALLELE': alt_allele,
+                'REF_ALLELE': VCF_ref_allele,  # Store VCF REF
+                'ALT_ALLELE': alt_allele,  # Store VEP's Allele (already anchor-stripped)
                 'Strand': transcript.strand,
-                'variant_id': f"{chrom}:{pos}:{ref_allele}>{alt_allele}",
+                'variant_id': f"{chrom}:{pos}:{ref_allele}>{alt_allele}",  # Use processed alleles
                 'transcript_id': transcript_with_version,
                 'gene_id': transcript.gene_id if transcript.gene_id else 'NA',
                 'is_canonical': canonical == 'YES',
@@ -1514,8 +1440,6 @@ def write_fasta_output(results_df, fasta_file):
     The sequences include:
     - Modified CDS with the PTC-causing variant applied
     - Original natural stop codon at the end 
-    
-    Requires 'modified_sequence' column in results_df.
     """
     print(f"\nWriting TranslationAI FASTA output to {fasta_file}...")
     
@@ -1573,7 +1497,7 @@ def main():
 Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 when no downstream AUG is found.
         """
     )
-    parser.add_argument('vep_file', help='VEP output file (VCF or tab-delimited)')
+    parser.add_argument('vep_file', help='VEP output file in VCF format with CSQ annotations')
     parser.add_argument('gtf', help='Reference GTF file')
     parser.add_argument('fasta', help='Reference genome FASTA file')
     parser.add_argument('--cds-fasta', help='CDS sequences FASTA file (optional)')
@@ -1665,13 +1589,8 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
     
     print("Reading and pre-filtering VEP output file...")
     
-    # Parse with pre-filtering
-    if vep_format == 'vcf':
-        vep_df = parse_vcf_csq_format(args.vep_file)
-    elif vep_format == 'extra':
-        vep_df = parse_extra_column_format(args.vep_file)
-    else:
-        vep_df = parse_standard_format(args.vep_file)
+    # Parse VCF format only
+    vep_df = parse_vcf_csq_format(args.vep_file)
     
     if vep_df.empty:
         print("No relevant data found after pre-filtering")
