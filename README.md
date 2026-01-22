@@ -22,7 +22,7 @@ pip install .
 
 ### Download required Data Files
 
-NMD requires several annotation files. Download and configure paths in `config.yaml`:
+predNMD requires several annotation files. Download and configure paths in `config.yaml`:
 
 1. LOEUF scores (can be downloaded with download_data.py)
 2. PhyloP conservation scores (can be downloaded with download_data.py)
