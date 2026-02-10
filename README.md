@@ -394,7 +394,7 @@ SHAP values explain each prediction:
 
 ## Citation
 
-If you use NMD in your research, please cite:
+If you use predNMD in your research, please cite:
 
 ```
 [**Paper citation here TODO**]
