@@ -27,7 +27,7 @@ setup(
     long_description_content_type='text/markdown',
     author='Yaqi Su',
     author_email='yaqisu@berkeley.edu',
-    url='https://github.com/yaqisu/NMD', #TODO: update URL if needed
+    url='https://github.com/yaqisu/predNMD', #TODO: update URL if needed
     packages=find_packages(),
     include_package_data=True,
     package_data={
