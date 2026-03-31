@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+requires = ["setuptools>=45,<82", "wheel", "setuptools_scm>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -34,6 +34,7 @@ dependencies = [
     "scikit-learn>=1.0.0",
     "shap>=0.41.0",
     "biopython>=1.79",
+    "setuptools<82",
 ]
 
 [project.optional-dependencies]
