@@ -20,7 +20,7 @@ with open('README.md', encoding='utf-8') as f:
 
 
 setup(
-    name='nmd',
+    name='prednmd',
     version='1.0.0',
     description='Machine learning-based prediction of NMD escape mechanisms',
     long_description=long_description,
