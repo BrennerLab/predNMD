@@ -400,10 +400,6 @@ If you use predNMD in your research, please cite:
 [**Paper citation here TODO**]
 ```
 
-## License
-
-**TBD: need to double check the university policy**
-
 
 ## Contact
 
