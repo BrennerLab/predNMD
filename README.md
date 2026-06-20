@@ -401,8 +401,5 @@ If you use predNMD in your research, please cite:
 ```
 
 
-## Contact
 
-- Issues: [GitHub Issues](https://github.com/yaqisu/NMD/issues)
-- Email: yaqisu@berkeley.edu
 
