@@ -161,7 +161,7 @@ If any of the installation step fails and cannot be resolved, you can also direc
 
 1. Pull the Docker image
 ```bash
-docker pull yaqisu/prednmd:latest
+docker pull brennerlab/prednmd:v1.0.0
 ```
 
 2. Gather all your data files (including input and all reference files) into one directory, assuming it's {DATA_DIR} for the following example
