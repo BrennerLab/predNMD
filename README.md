@@ -15,7 +15,7 @@
 conda create -n predNMD python=3.10 
 conda activate predNMD
 
-git clone https://github.com/yaqisu/predNMD.git
+git clone https://github.com/BrennerLab/predNMD.git
 cd predNMD
 pip install .
 ```
