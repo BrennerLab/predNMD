@@ -396,9 +396,8 @@ SHAP values explain each prediction:
 
 If you use predNMD in your research, please cite:
 
-```
-Su Y & Brenner SE. predNMD: prediction of nonsense-mediated mRNA decay for improved clinical variant pathogenicity classification. Preprint at bioRxiv. <[https://doi.org/10.64898/2026.05.06.723362](https://doi.org/10.64898/2026.06.20.733449)> (2026).
-```
+Su Y & Brenner SE. predNMD: prediction of nonsense-mediated mRNA decay for improved clinical variant pathogenicity classification. Preprint at bioRxiv. <https://doi.org/10.64898/2026.05.06.723362> (2026).
+
 
 
 
