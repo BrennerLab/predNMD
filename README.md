@@ -365,25 +365,6 @@ Runtime options:
   --threads THREADS     Number of threads
   --no-canonical        Include non-canonical transcripts
 ```
-
-
-## Interpretation Guide
-
-### Mechanism Classification
-
-**N_terminal (N-terminal rescue):**
-- Variant creates stop codon early in transcript
-- Downstream in-frame AUG allows reinitiation
-- Produces truncated protein missing N-terminus
-
-**C_terminal (C-terminal rescue):**
-- Variant does not trigger NMD
-- Produces truncated protein missing C-terminus
-
-**Uncertain:**
-- Both mechanisms (C_terminal or N_terminal) contribute equally
-- Or neither mechanism shows clear positive contribution to not triggering NMD
-
   
 
 ## Citation
