@@ -384,12 +384,6 @@ Runtime options:
 - Both mechanisms (C_terminal or N_terminal) contribute equally
 - Or neither mechanism shows clear positive contribution to not triggering NMD
 
-### SHAP Contributions
-
-SHAP values explain each prediction:
-- **Positive values**: Push toward NMD not-trigger
-- **Negative values**: Push toward NMD trigger
-- **Magnitude**: Importance of contribution
   
 
 ## Citation
