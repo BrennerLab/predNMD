@@ -280,19 +280,6 @@ If you would like to directly start from model prediction step, please provide a
 - `m6A_all_length_normalized_unconstrained`: m6A counts across the whole transcript normalized by transcript length
 
 
-## Pipeline Steps
-
-NMD runs the following steps if starting from an unannotated VCF file:
-
-1. **Filter VCF**: Keep only variants located in protein-coding regions
-2. **Ensembl VEP Annotation**: Annotate variants with Ensembl VEP 
-3. **Add PTC Features**: Add features for each variant, which will be input to the Random Forest model
-4. **Add LOEUF/PhyloP**: Add LOEUF and phyloP scores to the feature table
-5. **TranslationAI**: Apply TranslationAI to get predicted TIS/TTS scores for downstream inframe AUG/PTC
-6. **RF Prediction**: Apply Random Forest model with SHAP analysis 
-7. **Annotate VCF**: Add prediction results to the INFO field of VEP-annotated VCF 
-
-
 ## All command options
 ```bash
 prednmd run -h
