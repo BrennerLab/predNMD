@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
 
-"""
-NMD SHAP Analysis Script - Random Forest Version
-
-This script takes a trained Random Forest model for NMD trigger prediction and applies SHAP analysis
-to explain predictions in terms of N-terminal vs C-terminal escape mechanisms.
-
-Usage:
-    python nmd_shap_analysis_rf.py model_directory input_data.txt output_data.txt
-
-Model directory should contain:
-    - model_config.json
-    - scaler.joblib  
-    - random_forest_model.joblib
-"""
-
 import argparse
 import json
 import os
