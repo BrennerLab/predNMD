@@ -18,6 +18,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from version import get_table_annotation_lines
 
+
+CDS_REGROUP_BOUNDARY = 0.5          # relative CDS position at/after which CDS_position -> C group
+CDS_POSITION_FEATURE = 'CDS_position'
+AUG_DISTANCE_COLUMN = 'dis_to_first_inframeAUG'
+AUG_BOOLEAN_COLUMN = 'has_downstream_inframeAUG'
+AUG_SENTINEL = 100000.0             # value of AUG_DISTANCE_COLUMN meaning "no downstream in-frame AUG"
+
 def sigmoid(x):
     """Convert log-odds to probability using sigmoid function"""
     return 1 / (1 + np.exp(-x))
@@ -266,6 +273,104 @@ def calculate_group_contributions_trigger_space(shap_results, feature_groups):
     
     return escape_contributions, trigger_contributions
 
+def no_downstream_aug_mask(input_data):
+    """True where no downstream in-frame AUG exists, so reinitiation is impossible.
+
+    Prefers the explicit boolean column when present; otherwise reads the distance
+    column, in which a sentinel value encodes 'none'. Returns all-False if neither
+    column is available, which leaves the gate inactive rather than failing.
+    """
+    if AUG_BOOLEAN_COLUMN in input_data.columns:
+        values = input_data[AUG_BOOLEAN_COLUMN]
+        if values.dtype == bool:
+            return (~values).to_numpy()
+        as_text = values.astype(str).str.strip().str.lower()
+        if as_text.isin({'true', 'false', '1', '0', 'nan', ''}).all():
+            return as_text.isin({'false', '0'}).to_numpy()
+
+    if AUG_DISTANCE_COLUMN in input_data.columns:
+        distance = pd.to_numeric(input_data[AUG_DISTANCE_COLUMN], errors='coerce').to_numpy(dtype=float)
+        return distance >= AUG_SENTINEL
+
+    print(f"Warning: neither {AUG_BOOLEAN_COLUMN!r} nor {AUG_DISTANCE_COLUMN!r} found; "
+          "the downstream-AUG gate is inactive")
+    return np.zeros(len(input_data), dtype=bool)
+
+
+def apply_mechanism_rules(escape_contributions, shap_results, input_data):
+    """Apply the two attribution rules to the group contributions.
+
+    Both are repartitions of a fixed total: a group contribution is the sum of its
+    features' SHAP values, so moving a feature between groups is addition and
+    n + c + general is unchanged. Neither rule re-runs the model.
+
+    1. CDS_position moves from the N group to the C group for PTCs at or past
+       CDS_REGROUP_BOUNDARY of the CDS.
+    2. Where no downstream in-frame AUG exists, the whole remaining N contribution
+       moves to the general group and the N contribution becomes zero.
+
+    The gate mask is returned inside escape_contributions so that the probability
+    and classification functions can honour it.
+    """
+    print("Applying mechanism attribution rules...")
+
+    n_contrib = np.asarray(escape_contributions['n_terminal_contrib'], dtype=float).copy()
+    c_contrib = np.asarray(escape_contributions['c_terminal_contrib'], dtype=float).copy()
+    g_contrib = np.asarray(escape_contributions['general_contrib'], dtype=float).copy()
+
+    # Rule 1: CDS_position to the C group past the midpoint of the CDS.
+    feature_names = list(shap_results['feature_names'])
+    have_position = all(col in input_data.columns for col in ('CDS_position', 'distance_to_stop'))
+
+    if CDS_POSITION_FEATURE in feature_names and have_position:
+        shap_cds = np.asarray(shap_results['trigger_shap_values'], dtype=float)[
+            :, feature_names.index(CDS_POSITION_FEATURE)
+        ]
+        cds_pos = pd.to_numeric(input_data['CDS_position'], errors='coerce').to_numpy(dtype=float)
+        dist_stop = pd.to_numeric(input_data['distance_to_stop'], errors='coerce').to_numpy(dtype=float)
+        total = cds_pos + dist_stop
+
+        with np.errstate(invalid='ignore', divide='ignore'):
+            relative = np.where(total > 0, cds_pos / total, np.nan)
+
+        # An undefined relative position keeps the original grouping rather than
+        # being moved on the strength of a missing value.
+        moved = relative >= CDS_REGROUP_BOUNDARY
+        shift = np.where(moved & np.isfinite(shap_cds), shap_cds, 0.0)
+
+        # The contributions are escape-space (minus the trigger-space SHAP sum), so
+        # removing a feature from N adds its trigger-space value back to N.
+        n_contrib = n_contrib + shift
+        c_contrib = c_contrib - shift
+        print(f"  CDS_position -> C group for {int(np.sum(moved)):,} variant(s) "
+              f"at relative CDS position >= {CDS_REGROUP_BOUNDARY}")
+    else:
+        print("  CDS_position regrouping skipped: CDS_position/distance_to_stop not available")
+        moved = np.zeros(len(input_data), dtype=bool)
+
+    # Rule 2: no downstream in-frame AUG means no reinitiation, so nothing can
+    # remain in the N group.
+    gated = no_downstream_aug_mask(input_data)
+    if np.any(gated):
+        g_contrib = np.where(gated, g_contrib + n_contrib, g_contrib)
+        n_contrib = np.where(gated, 0.0, n_contrib)
+        print(f"  N contribution zeroed for {int(np.sum(gated)):,} variant(s) "
+              "with no downstream in-frame AUG")
+
+    escape_contributions = dict(escape_contributions)
+    escape_contributions['n_terminal_contrib'] = n_contrib
+    escape_contributions['c_terminal_contrib'] = c_contrib
+    escape_contributions['general_contrib'] = g_contrib
+    escape_contributions['no_downstream_aug'] = gated
+
+    for group, values in (('n_terminal_rescue', n_contrib),
+                          ('c_terminal_rescue', c_contrib),
+                          ('general_features', g_contrib)):
+        print(f"  {group} after rules: mean = {np.mean(values):+.4f}")
+
+    return escape_contributions
+
+
 def calculate_mechanism_probabilities(escape_contributions):
     """Calculate probability of N vs C terminal mechanism using softmax"""
     n_contrib = escape_contributions['n_terminal_contrib']
@@ -286,7 +391,16 @@ def calculate_mechanism_probabilities(escape_contributions):
     both_negative = (n_contrib < 0) & (c_contrib < 0)
     n_prob[both_negative] = 0.5
     c_prob[both_negative] = 0.5
-    
+
+    # No downstream in-frame AUG means N-terminal rescue is impossible. The softmax
+    # compares n - c, so a zeroed N contribution would beat any negative C
+    # contribution and report N as likely for exactly those variants; the
+    # probabilities are therefore set directly rather than left to the softmax.
+    gated = escape_contributions.get('no_downstream_aug')
+    if gated is not None and np.any(gated):
+        n_prob = np.where(gated, 0.0, n_prob)
+        c_prob = np.where(gated, 1.0, c_prob)
+
     return {
         'n_terminal_probability': n_prob,
         'c_terminal_probability': c_prob
@@ -311,7 +425,14 @@ def calculate_nt_ct_classification(escape_contributions):
     
     classification = np.where(n_terminal_dominant, 'N_terminal',
                             np.where(c_terminal_dominant, 'C_terminal', 'Uncertain'))
-    
+
+    # With reinitiation ruled out, C-terminal is the only mechanism available to a
+    # variant that escapes, so the call is forced rather than left as the
+    # 'Uncertain' this rule would return where C evidence is also non-positive.
+    gated = escape_contributions.get('no_downstream_aug')
+    if gated is not None and np.any(gated):
+        classification = np.where(gated, 'C_terminal', classification)
+
     return {
         'mechanism_classification': classification,
         'has_nt_ct_mechanisms': total_nt_ct_escape > 0
@@ -507,6 +628,9 @@ def main():
         
         print("\nCalculating group contributions...")
         escape_contributions, trigger_contributions = calculate_group_contributions_trigger_space(shap_results, feature_groups)
+
+        print("\nApplying mechanism attribution rules...")
+        escape_contributions = apply_mechanism_rules(escape_contributions, shap_results, input_data)
         
         print("\nCreating output...")
         # Determine if we need separate features output
