@@ -1185,13 +1185,36 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
     # ===== HANDLE VCF ANCHOR BASE =====
     # Determine variant type and strip anchor from REF if needed
     # VEP's Allele is already anchor-stripped, so we compare lengths to detect indels
+
+    # VEP reports CDS_position in coordinates of the anchor-stripped reference
+    # allele, so its span equals the length of REF *after* any anchor is removed.
+    # A span equal to len(REF) therefore means no anchor is present, which is the
+    # case for substitutions: VCF writes SNVs and MNVs without padding, since
+    # neither allele is ever empty. Left as None when unparseable, so the
+    # original stripping behaviour is preserved.
+    cds_span = None
+    if cds_position_str and cds_position_str not in ('-', 'NA'):
+        try:
+            if '-' in cds_position_str:
+                _start_str, _end_str = cds_position_str.split('-')[:2]
+                cds_span = int(_end_str) - int(_start_str) + 1
+            elif cds_position_str.isdigit():
+                cds_span = 1
+        except (ValueError, TypeError):
+            cds_span = None
     
     if len(ref_allele) == 1 and len(alt_allele) > 1:
         # INSERTION: VCF has REF=single base (anchor)
         # VEP Allele has the inserted sequence only (anchor stripped)
         ref_allele = ''  # Empty after stripping anchor
         
-    elif len(ref_allele) > 1:
+    elif len(ref_allele) > 1 and cds_span != len(ref_allele):
+        if cds_span is None and len(ref_allele) == len(alt_allele):
+            log_warning(
+                f"CDS_position '{cds_position_str}' gives no usable span, so a "
+                f"{len(ref_allele)} bp REF/ALT pair cannot be confirmed as a "
+                f"substitution; stripping an anchor base that may not exist",
+                variant_id)
         # DELETION or DELINS: VCF has REF=anchor+deleted
         # VEP Allele has the replacement sequence (or empty) with anchor stripped
         ref_allele = ref_allele[1:]  # Strip anchor from REF
