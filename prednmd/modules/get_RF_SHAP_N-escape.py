@@ -2,7 +2,6 @@
 
 import argparse
 import json
-import os
 import sys
 import warnings
 warnings.filterwarnings('ignore')
@@ -14,9 +13,17 @@ import shap
 import joblib
 from pathlib import Path
 
-# Import version information
+# Import version information when the script is installed inside the predNMD
+# package.  Keep a small standalone fallback for downloaded copies.
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from version import get_table_annotation_lines
+try:
+    from version import get_table_annotation_lines
+except ImportError:
+    def get_table_annotation_lines(command=None):
+        lines = []
+        if command:
+            lines.append(f"# Command: {command}")
+        return lines
 
 
 CDS_REGROUP_BOUNDARY = 0.5          # relative CDS position at/after which CDS_position -> C group
@@ -25,41 +32,241 @@ AUG_DISTANCE_COLUMN = 'dis_to_first_inframeAUG'
 AUG_BOOLEAN_COLUMN = 'has_downstream_inframeAUG'
 AUG_SENTINEL = 100000.0             # value of AUG_DISTANCE_COLUMN meaning "no downstream in-frame AUG"
 
+# Missing values for these features have explicit biological/sentinel meanings in
+# the training data.  Apply these raw values before StandardScaler.transform().
+DEFAULT_SPECIAL_IMPUTATION_VALUES = {
+    'AF': 1e-6,
+    'downstream_inframeAUG_translationAI': 1e-4,
+    'PTC_translationAI': 1e-4,
+    'dis_to_first_inframeAUG': 100000.0,
+    'dis_to_first_outframeAUG': 100000.0,
+}
+
+# Structural annotations that every legitimate stop-gain variant has by
+# construction.  A missing value here means the annotation step failed or the row
+# is not a real PTC, so it is an error rather than something to impute: filling it
+# with a training median turns a broken row into a plausible-looking prediction.
+REQUIRED_CONTINUOUS_FEATURES = {
+    'CDS_position',
+    'distance_to_stop',
+    'exon_length',
+    'dis_to_exon_end',
+    'downstream_exons',
+    'upstream_exons',
+    'dis_to_3utr_end',
+    'gc_content',
+}
+
+# Same reasoning on the categorical side.  0 is not a neutral default for
+# 50nt_rule; it is the positive claim that the PTC fails the rule.
+REQUIRED_CATEGORICAL_FEATURES = {'50nt_rule'}
+
+# Common column names used by VEP/predNMD input tables. The minimal output
+# always uses the standardized names on the left. Exact standardized names are
+# preferred when more than one alias is present.
+OUTPUT_IDENTIFIER_ALIASES = {
+    'CHR': ['CHR', 'CHROM', '#CHROM', 'chrom', 'chr'],
+    'POS': ['POS', 'Position', 'position', 'pos'],
+    'REF_ALLELE': ['REF_ALLELE', 'REF', 'ref'],
+    'ALT_ALLELE': ['ALT_ALLELE', 'ALT', 'alt'],
+    'transcript_id': [
+        'transcript_id', 'TRANSCRIPT_ID', 'Feature', 'FEATURE',
+        'Transcript', 'TRANSCRIPT', 'transcript',
+    ],
+    'gene_id': ['gene_id', 'GENE_ID', 'Gene', 'GENE', 'gene'],
+}
+
 def sigmoid(x):
     """Convert log-odds to probability using sigmoid function"""
     return 1 / (1 + np.exp(-x))
 
+def _load_training_medians(model_dir, config, continuous_features):
+    """Load raw-value training medians from joblib, with JSON fallback."""
+    configured_name = config.get('continuous_medians_file', 'continuous_medians.joblib')
+    median_path = model_dir / str(configured_name)
+
+    inline_medians = config.get('continuous_medians')
+    used_joblib = median_path.is_file()
+
+    if used_joblib:
+        loaded = joblib.load(median_path)
+        if isinstance(loaded, pd.Series):
+            medians = loaded.copy()
+        elif isinstance(loaded, dict):
+            medians = pd.Series(loaded)
+        else:
+            try:
+                medians = pd.Series(loaded, index=continuous_features)
+            except Exception as exc:
+                raise ValueError(
+                    f"Unsupported training-median artifact in {median_path}: "
+                    f"{type(loaded).__name__}"
+                ) from exc
+        median_source = str(median_path)
+    elif isinstance(inline_medians, dict):
+        medians = pd.Series(inline_medians)
+        median_source = f"{model_dir / 'model_config.json'} (continuous_medians block)"
+    else:
+        raise FileNotFoundError(
+            "The model bundle does not contain training-time continuous-feature "
+            "medians. Expected continuous_medians.joblib (or a "
+            "continuous_medians mapping in model_config.json). Retrain/save the "
+            "model with the updated training script before inference."
+        )
+
+    if medians.index.has_duplicates:
+        duplicated = medians.index[medians.index.duplicated()].unique().tolist()
+        raise ValueError(
+            "Saved training medians contain duplicate feature entries: "
+            + ', '.join(str(feature) for feature in duplicated)
+        )
+
+    missing = [feature for feature in continuous_features if feature not in medians.index]
+    if missing:
+        raise ValueError(
+            "Saved training medians are missing continuous features: "
+            + ', '.join(missing)
+        )
+
+    medians = pd.to_numeric(
+        medians.reindex(continuous_features), errors='coerce'
+    ).astype(float)
+    invalid = medians.index[~np.isfinite(medians.to_numpy(dtype=float))].tolist()
+    if invalid:
+        raise ValueError(
+            "Saved training medians are non-finite for: " + ', '.join(invalid)
+        )
+
+    # The export utility writes the medians twice (joblib + an inline JSON block).
+    # The joblib wins, so say so when the two copies have drifted apart.
+    if used_joblib and isinstance(inline_medians, dict):
+        inline_series = pd.to_numeric(
+            pd.Series(inline_medians).reindex(continuous_features), errors='coerce'
+        ).astype(float)
+        difference = (medians - inline_series).abs().max()
+        if not np.isfinite(difference) or difference > 1e-9:
+            print(
+                f"Warning: {median_path.name} and the continuous_medians block in "
+                "model_config.json disagree; the joblib file is being used"
+            )
+
+    return medians, median_source
+
+
 def load_model_components(model_dir):
-    """Load Random Forest model, scaler, and configuration from directory"""
-    model_dir = Path(model_dir)
-    
+    """Load Random Forest, scaler, feature manifest, and training medians."""
+    model_dir = Path(model_dir).expanduser().resolve()
+
     required_files = ['model_config.json', 'scaler.joblib', 'random_forest_model.joblib']
-    missing_files = [f for f in required_files if not (model_dir / f).exists()]
-    
+    missing_files = [name for name in required_files if not (model_dir / name).is_file()]
     if missing_files:
         raise FileNotFoundError(f"Missing required files in {model_dir}: {missing_files}")
-    
-    with open(model_dir / 'model_config.json', 'r') as f:
-        config = json.load(f)
-    
+
+    with open(model_dir / 'model_config.json', 'r') as handle:
+        config = json.load(handle)
+
     scaler = joblib.load(model_dir / 'scaler.joblib')
     model = joblib.load(model_dir / 'random_forest_model.joblib')
-    
     if not isinstance(model, RandomForestClassifier):
         raise ValueError(f"Expected RandomForestClassifier, got {type(model)}")
-    
-    categorical_features = config.get('categorical_features', ['50nt_rule', 'has_downstream_inframeAUG'])
-    continuous_features = config.get('continuous_features', [])
-    
+
+    continuous_features = list(config.get('continuous_features', []))
     if not continuous_features and hasattr(scaler, 'feature_names_in_'):
-        continuous_features = list(scaler.feature_names_in_)
-    
+        continuous_features = [str(value) for value in scaler.feature_names_in_]
+    if not continuous_features:
+        raise ValueError(
+            "model_config.json does not define continuous_features and the saved "
+            "scaler does not expose feature_names_in_."
+        )
+
+    # No hardcoded fallback list: whatever is not continuous is read off the saved
+    # model, so a bundle can never be scored against a guessed feature manifest.
+    categorical_features = config.get('categorical_features')
+    if categorical_features is None:
+        if not hasattr(model, 'feature_names_in_'):
+            raise ValueError(
+                "model_config.json does not define categorical_features and the "
+                "saved Random Forest does not expose feature_names_in_ to derive "
+                "them from."
+            )
+        continuous_set = set(continuous_features)
+        categorical_features = [
+            str(value) for value in model.feature_names_in_
+            if str(value) not in continuous_set
+        ]
+        print(
+            "model_config.json does not define categorical_features; derived "
+            f"{categorical_features} from the saved model"
+        )
+    categorical_features = list(categorical_features)
+
     all_features = categorical_features + continuous_features
-    
+    if len(set(all_features)) != len(all_features):
+        raise ValueError("The saved feature manifest contains duplicate feature names")
+
+    training_medians, median_source = _load_training_medians(
+        model_dir, config, continuous_features
+    )
+
+    special_imputation_values = dict(DEFAULT_SPECIAL_IMPUTATION_VALUES)
+    configured_special = config.get('special_imputation_values', {})
+    if isinstance(configured_special, dict):
+        unknown = [
+            str(feature) for feature in configured_special
+            if str(feature) not in continuous_features
+        ]
+        if unknown:
+            raise ValueError(
+                "special_imputation_values in model_config.json names feature(s) "
+                "that are not continuous model features, so they would be silently "
+                "ignored: " + ', '.join(unknown)
+            )
+        for feature, value in configured_special.items():
+            try:
+                special_imputation_values[str(feature)] = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid special imputation value for {feature!r}: {value!r}"
+                ) from exc
+
+    if hasattr(scaler, 'n_features_in_') and int(scaler.n_features_in_) != len(continuous_features):
+        raise ValueError(
+            f"Saved scaler expects {int(scaler.n_features_in_)} continuous features, "
+            f"but model_config.json defines {len(continuous_features)}"
+        )
+    if hasattr(scaler, 'feature_names_in_'):
+        scaler_features = [str(value) for value in scaler.feature_names_in_]
+        if scaler_features != continuous_features:
+            raise ValueError(
+                "Saved scaler feature order does not match model_config.json. "
+                f"Scaler={scaler_features}; config={continuous_features}"
+            )
+    if hasattr(model, 'n_features_in_') and int(model.n_features_in_) != len(all_features):
+        raise ValueError(
+            f"Saved Random Forest expects {int(model.n_features_in_)} total features, "
+            f"but the manifest defines {len(all_features)}"
+        )
+    if hasattr(model, 'feature_names_in_'):
+        model_features = [str(value) for value in model.feature_names_in_]
+        if model_features != all_features:
+            raise ValueError(
+                "Saved Random Forest feature order does not match model_config.json. "
+                f"Model={model_features}; config={all_features}"
+            )
+
     print(f"Loaded Random Forest model from {model_dir}")
     print(f"Trees: {model.n_estimators}, Features: {len(all_features)}")
-    
-    return model, scaler, config, categorical_features, continuous_features
+    print(f"Loaded training medians from: {median_source}")
+
+    return (
+        model,
+        scaler,
+        config,
+        categorical_features,
+        continuous_features,
+        training_medians,
+        special_imputation_values,
+    )
 
 def load_input_data(input_file):
     """Load input data from txt file"""
@@ -97,103 +304,228 @@ def define_feature_groups():
         }
     }
 
-def apply_shap_analysis_trigger_space(model, scaler, input_data, feature_groups, categorical_features, continuous_features):
-    """Apply SHAP analysis using Random Forest model"""
-    print("Applying SHAP analysis...")
-    
-    all_features = categorical_features + continuous_features
-    missing_features = [f for f in all_features if f not in input_data.columns]
-    available_features = [f for f in all_features if f in input_data.columns]
-    
-    if missing_features:
-        print(f"Warning: Missing features: {missing_features}")
-    
+def _coerce_binary_feature(series, feature, required=False):
+    """Match training behavior: valid binary values, with missing -> 0.
+
+    When ``required`` is set, a missing value is an error instead: 0 is a
+    substantive claim about the variant, not a neutral placeholder.
+    """
+    if pd.api.types.is_bool_dtype(series.dtype):
+        numeric = series.astype('Int64').astype(float)
+    else:
+        normalized = series.copy()
+        if pd.api.types.is_object_dtype(normalized.dtype) or isinstance(
+            normalized.dtype, pd.StringDtype
+        ):
+            text_values = normalized.astype('string').str.strip().str.lower()
+            mapped = text_values.map({
+                'true': 1, 'false': 0, 'yes': 1, 'no': 0, 'y': 1, 'n': 0,
+            })
+            normalized = normalized.where(mapped.isna(), mapped)
+        numeric = pd.to_numeric(normalized, errors='coerce')
+
+    if required and numeric.isna().any():
+        rows = numeric.index[numeric.isna()]
+        raise ValueError(
+            f"Required binary feature {feature!r} has no usable value for "
+            f"{len(rows)} row(s) (first: {rows[:5].tolist()}). Every stop-gain "
+            "variant must have this feature; check the annotation step rather "
+            "than defaulting it to 0."
+        )
+
+    numeric = numeric.fillna(0)
+    invalid = ~numeric.isin([0, 1])
+    if invalid.any():
+        examples = series.loc[invalid].drop_duplicates().head(10).tolist()
+        raise ValueError(
+            f"Binary feature {feature!r} contains values other than 0/1: {examples}"
+        )
+    return numeric.astype(int)
+
+
+def prepare_model_features(
+    input_data,
+    scaler,
+    categorical_features,
+    continuous_features,
+    training_medians,
+    special_imputation_values,
+):
+    """Reproduce training-time raw imputation and scaling exactly."""
+    all_features = list(categorical_features) + list(continuous_features)
+    missing_columns = [feature for feature in all_features if feature not in input_data.columns]
+    if missing_columns:
+        raise ValueError(
+            "Input data is missing required model feature columns: "
+            + ', '.join(missing_columns)
+        )
+
     X = pd.DataFrame(index=input_data.index)
-    
-    # Process categorical features
-    for feat in categorical_features:
-        if feat in input_data.columns:
-            if input_data[feat].dtype == 'bool':
-                X[feat] = input_data[feat].astype(int)
-            elif input_data[feat].dtype == 'object':
-                X[feat] = input_data[feat].map({'True': 1, 'False': 0, True: 1, False: 0}).fillna(0).astype(int)
-            else:
-                X[feat] = input_data[feat].fillna(0).astype(int)
-        else:
-            X[feat] = 0
-    
-    # Process continuous features
-    available_continuous = [f for f in continuous_features if f in input_data.columns]
-    if available_continuous:
-        continuous_data = input_data[available_continuous].copy()
-        
-        for col in continuous_data.columns:
-            if continuous_data[col].isnull().any():
-                median_val = continuous_data[col].median()
-                continuous_data[col] = continuous_data[col].fillna(median_val)
-        
-        try:
-            continuous_scaled = scaler.transform(continuous_data)
-            continuous_scaled_df = pd.DataFrame(
-                continuous_scaled,
-                index=continuous_data.index,
-                columns=available_continuous
-            )
-            X = pd.concat([X, continuous_scaled_df], axis=1)
-        except Exception as e:
-            print(f"Scaling failed: {e}")
-            X = pd.concat([X, continuous_data], axis=1)
-    
-    missing_continuous = [f for f in continuous_features if f not in input_data.columns]
-    for feat in missing_continuous:
-        X[feat] = 0.0
-    
+    for feature in categorical_features:
+        X[feature] = _coerce_binary_feature(
+            input_data[feature],
+            feature,
+            required=feature in REQUIRED_CATEGORICAL_FEATURES,
+        )
+
+    continuous_data = input_data[list(continuous_features)].copy()
+    for feature in continuous_features:
+        continuous_data[feature] = pd.to_numeric(
+            continuous_data[feature], errors='coerce'
+        )
+
+    # Structural annotations are checked before any imputation runs: a gap here is
+    # an upstream failure, not a value to fill in.
+    required_gaps = {}
+    for feature in continuous_features:
+        if feature not in REQUIRED_CONTINUOUS_FEATURES:
+            continue
+        missing = continuous_data[feature].isna()
+        if missing.any():
+            required_gaps[feature] = continuous_data.index[missing]
+    if required_gaps:
+        details = '; '.join(
+            f"{feature}: {len(rows):,} row(s) (first: {rows[:5].tolist()})"
+            for feature, rows in required_gaps.items()
+        )
+        raise ValueError(
+            "Required feature(s) have no usable value for some rows. Every "
+            "stop-gain variant must have these by construction, so check the "
+            "annotation step rather than imputing them. " + details
+        )
+
+    special_counts = {}
+    for feature, fill_value in special_imputation_values.items():
+        if feature not in continuous_data.columns:
+            continue
+        missing = continuous_data[feature].isna()
+        if missing.any():
+            continuous_data.loc[missing, feature] = float(fill_value)
+            special_counts[feature] = int(missing.sum())
+
+    # Any remaining missing continuous values receive the corresponding raw-value
+    # median learned from the training table, never a median from this input batch.
+    median_counts = {}
+    for feature in continuous_features:
+        missing = continuous_data[feature].isna()
+        if missing.any():
+            median = float(training_medians.loc[feature])
+            continuous_data.loc[missing, feature] = median
+            median_counts[feature] = int(missing.sum())
+
+    remaining = continuous_data.columns[continuous_data.isna().any()].tolist()
+    if remaining:
+        raise ValueError(
+            "Missing values remain after special-value and training-median "
+            "imputation: " + ', '.join(remaining)
+        )
+
+    if special_counts:
+        print("Applied project-specific missing-value replacements:")
+        for feature in continuous_features:
+            if feature in special_counts:
+                print(
+                    f"  {feature}: {special_counts[feature]:,} row(s) -> "
+                    f"{special_imputation_values[feature]:g}"
+                )
+    if median_counts:
+        print("Applied saved training medians to remaining missing values:")
+        for feature in continuous_features:
+            if feature in median_counts:
+                print(
+                    f"  {feature}: {median_counts[feature]:,} row(s) -> "
+                    f"{float(training_medians.loc[feature]):g}"
+                )
+
+    # Failure is explicit: never fall back to unscaled data.
+    continuous_scaled = scaler.transform(continuous_data[list(continuous_features)])
+    continuous_scaled_df = pd.DataFrame(
+        continuous_scaled,
+        index=continuous_data.index,
+        columns=list(continuous_features),
+    )
+    X = pd.concat([X, continuous_scaled_df], axis=1)
     X = X[all_features]
-    
-    if X.isnull().any().any():
-        X = X.fillna(0)
-    
-    # Make predictions
-    try:
-        trigger_predictions = model.predict_proba(X)[:, 1]
-    except Exception as e:
-        print(f"predict_proba failed: {e}")
-        trigger_predictions = model.predict(X)
-    
+
+    if not X.index.equals(input_data.index):
+        raise AssertionError("Row order changed during inference preprocessing")
+    if X.columns.tolist() != all_features:
+        raise AssertionError("Inference feature names or order changed")
+    if X.isna().any().any():
+        bad = X.columns[X.isna().any()].tolist()
+        raise AssertionError(
+            "Unexpected missing values after inference preprocessing: "
+            + ', '.join(bad)
+        )
+    if not np.isfinite(X.to_numpy(dtype=float)).all():
+        raise AssertionError("Non-finite model values remain after preprocessing")
+
+    report = {
+        'special_imputation_counts': special_counts,
+        'training_median_imputation_counts': median_counts,
+    }
+    return X, continuous_data, report
+
+
+def apply_shap_analysis_trigger_space(
+    model,
+    scaler,
+    input_data,
+    feature_groups,
+    categorical_features,
+    continuous_features,
+    training_medians,
+    special_imputation_values,
+):
+    """Apply RF prediction and SHAP using training-consistent preprocessing."""
+    print("Applying SHAP analysis...")
+
+    X, imputed_continuous_data, preprocessing_report = prepare_model_features(
+        input_data=input_data,
+        scaler=scaler,
+        categorical_features=categorical_features,
+        continuous_features=continuous_features,
+        training_medians=training_medians,
+        special_imputation_values=special_imputation_values,
+    )
+
+    trigger_predictions = model.predict_proba(X)[:, 1]
     if trigger_predictions.min() < 0 or trigger_predictions.max() > 1:
-        raise ValueError(f"Invalid predictions: range {trigger_predictions.min():.3f} to {trigger_predictions.max():.3f}")
-    
+        raise ValueError(
+            f"Invalid predictions: range {trigger_predictions.min():.3f} "
+            f"to {trigger_predictions.max():.3f}"
+        )
     escape_predictions = 1 - trigger_predictions
-    
-    # Calculate SHAP values
+
     print("Computing SHAP values...")
     explainer = shap.TreeExplainer(model)
     trigger_shap_values = explainer.shap_values(X)
-    
+
     if isinstance(trigger_shap_values, list) and len(trigger_shap_values) == 2:
         trigger_shap_values = trigger_shap_values[1]
     elif hasattr(trigger_shap_values, 'ndim') and trigger_shap_values.ndim == 3:
         if trigger_shap_values.shape[2] == 2:
             trigger_shap_values = trigger_shap_values[:, :, 1]
-    
+
     trigger_baseline_raw = explainer.expected_value
-    
     if isinstance(trigger_baseline_raw, (list, np.ndarray)):
         if len(trigger_baseline_raw) == 2:
             trigger_baseline_raw = trigger_baseline_raw[1]
         elif hasattr(trigger_baseline_raw, 'shape') and trigger_baseline_raw.ndim > 0:
-            trigger_baseline_raw = trigger_baseline_raw[1] if len(trigger_baseline_raw) > 1 else trigger_baseline_raw[0]
-    
+            trigger_baseline_raw = (
+                trigger_baseline_raw[1]
+                if len(trigger_baseline_raw) > 1
+                else trigger_baseline_raw[0]
+            )
+
     if trigger_baseline_raw < 0 or trigger_baseline_raw > 1:
         trigger_baseline = sigmoid(trigger_baseline_raw)
         baseline_was_logodds = True
     else:
         trigger_baseline = trigger_baseline_raw
         baseline_was_logodds = False
-    
     escape_baseline = 1 - trigger_baseline
-    
-    # Verify SHAP additivity
+
     if baseline_was_logodds:
         reconstructed_logits = trigger_baseline_raw + trigger_shap_values.sum(axis=1)
         reconstructed_probs = sigmoid(reconstructed_logits)
@@ -201,9 +533,8 @@ def apply_shap_analysis_trigger_space(model, scaler, input_data, feature_groups,
     else:
         reconstructed_probs = trigger_baseline + trigger_shap_values.sum(axis=1)
         max_error = np.abs(reconstructed_probs - trigger_predictions).max()
-    
     print(f"SHAP additivity check: max error = {max_error:.10f}")
-    
+
     return {
         'trigger_predictions': trigger_predictions,
         'escape_predictions': escape_predictions,
@@ -211,12 +542,15 @@ def apply_shap_analysis_trigger_space(model, scaler, input_data, feature_groups,
         'trigger_baseline': trigger_baseline,
         'escape_baseline': escape_baseline,
         'feature_names': list(X.columns),
-        'selected_features': available_features,
-        'missing_features': missing_features,
-        'categorical_features': categorical_features,
-        'continuous_features': continuous_features,
+        'selected_features': list(X.columns),
+        'missing_features': [],
+        'categorical_features': list(categorical_features),
+        'continuous_features': list(continuous_features),
         'baseline_was_logodds': baseline_was_logodds,
-        'raw_baseline': trigger_baseline_raw
+        'raw_baseline': trigger_baseline_raw,
+        'imputed_continuous_data': imputed_continuous_data,
+        'preprocessing_report': preprocessing_report,
+        'special_imputation_values': dict(special_imputation_values),
     }
 
 def calculate_group_contributions_trigger_space(shap_results, feature_groups):
@@ -255,6 +589,17 @@ def calculate_group_contributions_trigger_space(shap_results, feature_groups):
             group_contributions = trigger_shap_values[:, group_indices].sum(axis=1)
             trigger_contributions[contrib_key] = group_contributions
             print(f"{group_name}: {len(found_features)} features, mean = {np.mean(group_contributions):+.4f}")
+
+    grouped_features = {
+        feature for info in feature_groups.values() for feature in info['features']
+    }
+    unassigned = [name for name in feature_names if name not in grouped_features]
+    if unassigned:
+        print(
+            "Warning: model feature(s) belong to no mechanism group, so their SHAP "
+            "contributions are excluded from the N/C/general decomposition: "
+            + ', '.join(unassigned)
+        )
     
     escape_contributions = {
         'n_terminal_contrib': -trigger_contributions['n_terminal_trigger_contrib'],
@@ -273,28 +618,52 @@ def calculate_group_contributions_trigger_space(shap_results, feature_groups):
     
     return escape_contributions, trigger_contributions
 
-def no_downstream_aug_mask(input_data):
-    """True where no downstream in-frame AUG exists, so reinitiation is impossible.
+def no_downstream_aug_mask(input_data, special_imputation_values=None):
+    """Identify rows with no downstream in-frame AUG.
 
-    Prefers the explicit boolean column when present; otherwise reads the distance
-    column, in which a sentinel value encodes 'none'. Returns all-False if neither
-    column is available, which leaves the gate inactive rather than failing.
+    Known values in an explicit boolean column take priority.  Missing/unknown
+    boolean values fall back to the AUG-distance column.  Missing AUG distance is
+    interpreted using the same 100000 sentinel used for inference imputation.
     """
+    n_rows = len(input_data)
+    no_aug = np.zeros(n_rows, dtype=bool)
+    resolved = np.zeros(n_rows, dtype=bool)
+
     if AUG_BOOLEAN_COLUMN in input_data.columns:
-        values = input_data[AUG_BOOLEAN_COLUMN]
-        if values.dtype == bool:
-            return (~values).to_numpy()
-        as_text = values.astype(str).str.strip().str.lower()
-        if as_text.isin({'true', 'false', '1', '0', 'nan', ''}).all():
-            return as_text.isin({'false', '0'}).to_numpy()
+        # Parse to a number rather than matching literal spellings: a float64
+        # column (which any missing value forces) renders as '1.0'/'0.0', which
+        # string matching would reject, silently discarding a usable column.
+        text_values = input_data[AUG_BOOLEAN_COLUMN].astype('string').str.strip().str.lower()
+        mapped = text_values.map(
+            {'true': 1.0, 'false': 0.0, 'yes': 1.0, 'no': 0.0, 'y': 1.0, 'n': 0.0}
+        )
+        numeric_values = mapped.fillna(pd.to_numeric(text_values, errors='coerce'))
+        known = numeric_values.isin([0, 1]).to_numpy()
+        no_aug[known] = (numeric_values == 0).to_numpy()[known]
+        resolved[known] = True
 
     if AUG_DISTANCE_COLUMN in input_data.columns:
-        distance = pd.to_numeric(input_data[AUG_DISTANCE_COLUMN], errors='coerce').to_numpy(dtype=float)
-        return distance >= AUG_SENTINEL
+        distance = pd.to_numeric(
+            input_data[AUG_DISTANCE_COLUMN], errors='coerce'
+        )
+        fill_value = AUG_SENTINEL
+        if special_imputation_values is not None:
+            fill_value = float(
+                special_imputation_values.get(AUG_DISTANCE_COLUMN, AUG_SENTINEL)
+            )
+        distance = distance.fillna(fill_value).to_numpy(dtype=float)
+        distance_no_aug = distance >= AUG_SENTINEL
+        unresolved = ~resolved
+        no_aug[unresolved] = distance_no_aug[unresolved]
+        resolved[unresolved] = True
 
-    print(f"Warning: neither {AUG_BOOLEAN_COLUMN!r} nor {AUG_DISTANCE_COLUMN!r} found; "
-          "the downstream-AUG gate is inactive")
-    return np.zeros(len(input_data), dtype=bool)
+    if not resolved.all():
+        print(
+            f"Warning: {int((~resolved).sum()):,} row(s) lack a usable "
+            f"{AUG_BOOLEAN_COLUMN!r} or {AUG_DISTANCE_COLUMN!r}; the downstream-AUG "
+            "gate is left inactive for those rows"
+        )
+    return no_aug
 
 
 def apply_mechanism_rules(escape_contributions, shap_results, input_data):
@@ -320,14 +689,26 @@ def apply_mechanism_rules(escape_contributions, shap_results, input_data):
 
     # Rule 1: CDS_position to the C group past the midpoint of the CDS.
     feature_names = list(shap_results['feature_names'])
-    have_position = all(col in input_data.columns for col in ('CDS_position', 'distance_to_stop'))
+
+    # Read the post-imputation values the model was actually given, so the rule and
+    # the SHAP value it is repartitioning describe the same variant.
+    imputed = shap_results.get('imputed_continuous_data')
+
+    def _position_values(column):
+        if imputed is not None and column in imputed.columns:
+            return imputed[column].to_numpy(dtype=float)
+        if column in input_data.columns:
+            return pd.to_numeric(input_data[column], errors='coerce').to_numpy(dtype=float)
+        return None
+
+    cds_pos = _position_values('CDS_position')
+    dist_stop = _position_values('distance_to_stop')
+    have_position = cds_pos is not None and dist_stop is not None
 
     if CDS_POSITION_FEATURE in feature_names and have_position:
         shap_cds = np.asarray(shap_results['trigger_shap_values'], dtype=float)[
             :, feature_names.index(CDS_POSITION_FEATURE)
         ]
-        cds_pos = pd.to_numeric(input_data['CDS_position'], errors='coerce').to_numpy(dtype=float)
-        dist_stop = pd.to_numeric(input_data['distance_to_stop'], errors='coerce').to_numpy(dtype=float)
         total = cds_pos + dist_stop
 
         with np.errstate(invalid='ignore', divide='ignore'):
@@ -344,13 +725,19 @@ def apply_mechanism_rules(escape_contributions, shap_results, input_data):
         c_contrib = c_contrib - shift
         print(f"  CDS_position -> C group for {int(np.sum(moved)):,} variant(s) "
               f"at relative CDS position >= {CDS_REGROUP_BOUNDARY}")
+        undefined = int(np.sum(~np.isfinite(relative)))
+        if undefined:
+            print(f"  {undefined:,} variant(s) had an undefined relative CDS position "
+                  "and kept their original grouping")
     else:
         print("  CDS_position regrouping skipped: CDS_position/distance_to_stop not available")
         moved = np.zeros(len(input_data), dtype=bool)
 
     # Rule 2: no downstream in-frame AUG means no reinitiation, so nothing can
     # remain in the N group.
-    gated = no_downstream_aug_mask(input_data)
+    gated = no_downstream_aug_mask(
+        input_data, shap_results.get('special_imputation_values')
+    )
     if np.any(gated):
         g_contrib = np.where(gated, g_contrib + n_contrib, g_contrib)
         n_contrib = np.where(gated, 0.0, n_contrib)
@@ -482,14 +869,35 @@ def create_output_data_minimal(input_data, shap_results, escape_contributions, s
         np.nan
     )
     
-    # Create minimal predictions table
-    essential_cols = ['CHR', 'POS', 'REF_ALLELE', 'ALT_ALLELE', 'transcript_id', 'gene_id']
+    # Create a stable minimal predictions table. VEP-style input commonly uses
+    # Feature/Gene instead of transcript_id/gene_id, so map known aliases to
+    # standardized output names rather than silently dropping those columns.
     pred_data = {}
-    
-    for col in essential_cols:
-        if col in input_data.columns:
-            pred_data[col] = input_data[col]
-    
+    identifier_mapping = {}
+    for output_column, aliases in OUTPUT_IDENTIFIER_ALIASES.items():
+        source_column = next(
+            (candidate for candidate in aliases if candidate in input_data.columns),
+            None,
+        )
+        if source_column is None:
+            pred_data[output_column] = pd.Series(
+                pd.NA, index=input_data.index, dtype='object'
+            )
+        else:
+            pred_data[output_column] = input_data[source_column]
+            identifier_mapping[output_column] = source_column
+
+    for output_column in OUTPUT_IDENTIFIER_ALIASES:
+        source_column = identifier_mapping.get(output_column)
+        if source_column is None:
+            print(
+                f"Warning: no input column was found for {output_column!r}. "
+                f"Checked aliases: {OUTPUT_IDENTIFIER_ALIASES[output_column]}. "
+                "The output column is present but contains missing values."
+            )
+        elif source_column != output_column:
+            print(f"Mapped input column {source_column!r} -> output column {output_column!r}")
+
     pred_data['nmd_trigger_probability'] = shap_results['trigger_predictions']
     pred_data['mechanism_classification'] = mechanism_classification
     pred_data['c_terminal_probability'] = c_terminal_probability
@@ -615,7 +1023,15 @@ def main():
     
     try:
         print("Loading model...")
-        model, scaler, config, categorical_features, continuous_features = load_model_components(args.model_directory)
+        (
+            model,
+            scaler,
+            config,
+            categorical_features,
+            continuous_features,
+            training_medians,
+            special_imputation_values,
+        ) = load_model_components(args.model_directory)
         
         print("\nLoading input data...")
         input_data = load_input_data(args.input_file)
@@ -623,13 +1039,19 @@ def main():
         print("\nDefining feature groups...")
         feature_groups = define_feature_groups()
         
-        print("\nApplying SHAP analysis...")
-        shap_results = apply_shap_analysis_trigger_space(model, scaler, input_data, feature_groups, categorical_features, continuous_features)
+        shap_results = apply_shap_analysis_trigger_space(
+            model,
+            scaler,
+            input_data,
+            feature_groups,
+            categorical_features,
+            continuous_features,
+            training_medians,
+            special_imputation_values,
+        )
         
-        print("\nCalculating group contributions...")
         escape_contributions, trigger_contributions = calculate_group_contributions_trigger_space(shap_results, feature_groups)
 
-        print("\nApplying mechanism attribution rules...")
         escape_contributions = apply_mechanism_rules(escape_contributions, shap_results, input_data)
         
         print("\nCreating output...")
