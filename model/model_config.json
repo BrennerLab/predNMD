@@ -33,5 +33,34 @@
     "max_features": "sqrt",
     "class_weight": "balanced",
     "bootstrap": true
-}
+  },
+  "continuous_medians_file": "continuous_medians.joblib",
+  "continuous_medians": {
+    "distance_to_stop": 638.0,
+    "gc_content": 0.5111111111111111,
+    "CDS_position": 801.0,
+    "dis_to_3utr_end": 1916.5,
+    "downstream_exons": 3.0,
+    "phyloP": 2.446000099182129,
+    "LOEUF": 0.953,
+    "exon_length": 200.0,
+    "dis_to_exon_end": 111.0,
+    "m6A_CDS_length_normalized_unconstrained": 0.0048076923076923,
+    "m6A_all_length_normalized_unconstrained": 0.0057318447843724505,
+    "downstream_inframeAUG_translationAI": 0.1360109999077394,
+    "PTC_translationAI": 0.6154544583987445,
+    "CAI_25codon_upstream_diff": 0.0024704715508171,
+    "AF": 6.57065e-06,
+    "Mean_Expression": 13.641540808823532,
+    "upstream_exons": 5.0,
+    "dis_to_first_inframeAUG": 135.0,
+    "dis_to_first_outframeAUG": 67.0
+  },
+  "special_imputation_values": {
+    "AF": 1e-06,
+    "downstream_inframeAUG_translationAI": 0.0001,
+    "PTC_translationAI": 0.0001,
+    "dis_to_first_inframeAUG": 100000.0,
+    "dis_to_first_outframeAUG": 100000.0
+  }
 }
