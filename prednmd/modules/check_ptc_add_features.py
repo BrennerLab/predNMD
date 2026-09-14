@@ -870,10 +870,9 @@ def analyze_ptc(transcript, ptc_cds_pos, variant_cds_pos, variant_length_change,
     features['gc_content'] = calculate_gc_content(modified_cds_seq)
     
     utr3_length = transcript.get_utr3_length()
-    if utr3_length is not None:
-        features['dis_to_3utr_end'] = features['distance_to_stop'] + utr3_length
-    else:
-        features['dis_to_3utr_end'] = 'NA'
+    if utr3_length is None:
+        utr3_length = 0
+    features['dis_to_3utr_end'] = features['distance_to_stop'] + utr3_length
 
     if ptc_cds_pos > variant_cds_pos:
         original_ptc_cds_pos = ptc_cds_pos - variant_length_change
