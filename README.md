@@ -12,7 +12,7 @@
 
 ```bash
 #It’s highly recommended to start a fresh environment to avoid potential dependency conflicts
-conda create -n predNMD
+conda create -n predNMD python=3.13
 conda activate predNMD
 
 git clone https://github.com/BrennerLab/predNMD.git
