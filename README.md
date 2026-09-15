@@ -87,7 +87,7 @@ annotation:
   m6a_file: /path/to/m6A_annotations.txt # provided at /data/hg19_m6A-Atlas_highRes_all.txt.gz or /data/hg38_m6A-Atlas_highRes_all.txt.gz
   expression_file: /path/to/gene_expression.csv # provided at /data/GTEx_mean_expression_per_gene.csv
 
-# Ensembl VEP configuration (REQUIRED if using Ensembl VEP)
+# Ensembl VEP configuration (OPTIONAL, only required if using Ensembl VEP)
 vep:
   vep_path: /path/to/vep #path to vep executable
   cache_dir: /path/to/.vep #path to vep cache, can be downloaded via download_data.py
