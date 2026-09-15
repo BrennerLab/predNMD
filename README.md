@@ -227,7 +227,7 @@ Tab-delimited file with the following columns:
 - `nmd_trigger_probability`: Probability of triggering NMD (0-1)
 
 **Mechanism Classification** (for NMD-not trigger cases only, i.e., when nmd_trigger_probability < 0.5):
-- `mechanism_classification`: N_terminal, C_terminal, or Uncertain
+- `mechanism_classification`: N_terminal_confident, N_terminal_uncertain, C_terminal_confident, C_terminal_uncertain, or Uncertain
 - `n_terminal_probability`: Probability of N-terminal rescue mechanism
 - `c_terminal_probability`: Probability of C-terminal rescue mechanism
 
@@ -235,7 +235,7 @@ Tab-delimited file with the following columns:
 
 VCF file with added INFO fields:
 - `NMD_PROB`: NMD-trigger probability
-- `MECH_CLASS`:  Mechanism classification for variants predicted as not triggering NMD (N_terminal, C_terminal, or Uncertain)
+- `MECH_CLASS`:  Mechanism classification for variants predicted as not triggering NMD 
 - `N_TERMINAL_PROB`: N-terminal truncation probability
 - `C_TERMINAL_PROB`: C-terminal truncation probability
 
