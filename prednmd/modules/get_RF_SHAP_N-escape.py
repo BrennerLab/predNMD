@@ -342,6 +342,76 @@ def _coerce_binary_feature(series, feature, required=False):
         )
     return numeric.astype(int)
 
+def _binary_feature_na_mask(series):
+    """Rows where a binary feature has no usable value.
+
+    Mirrors the coercion in _coerce_binary_feature but reports instead of raising,
+    so the caller can drop the row rather than fail the whole run.
+    """
+    if pd.api.types.is_bool_dtype(series.dtype):
+        numeric = series.astype('Int64').astype(float)
+    else:
+        normalized = series.copy()
+        if pd.api.types.is_object_dtype(normalized.dtype) or isinstance(
+            normalized.dtype, pd.StringDtype
+        ):
+            text_values = normalized.astype('string').str.strip().str.lower()
+            mapped = text_values.map({
+                'true': 1, 'false': 0, 'yes': 1, 'no': 0, 'y': 1, 'n': 0,
+            })
+            normalized = normalized.where(mapped.isna(), mapped)
+        numeric = pd.to_numeric(normalized, errors='coerce')
+    return numeric.isna()
+
+
+def drop_rows_missing_required(input_data):
+    """Drop rows lacking a required structural annotation, with a warning.
+
+    A gap in these features means the annotation step failed for that row, so the
+    row cannot be scored - but one bad row should not cost the whole run. Only
+    features present in input_data are checked; a missing *column* is a different
+    failure and is still raised by prepare_model_features.
+    """
+    gaps = {}
+
+    for feature in sorted(REQUIRED_CONTINUOUS_FEATURES):
+        if feature not in input_data.columns:
+            continue
+        missing = pd.to_numeric(input_data[feature], errors='coerce').isna()
+        if missing.any():
+            gaps[feature] = input_data.index[missing]
+
+    for feature in sorted(REQUIRED_CATEGORICAL_FEATURES):
+        if feature not in input_data.columns:
+            continue
+        missing = _binary_feature_na_mask(input_data[feature])
+        if missing.any():
+            gaps[feature] = input_data.index[missing]
+
+    if not gaps:
+        return input_data
+
+    bad_index = input_data.index[[False] * len(input_data)]
+    for rows in gaps.values():
+        bad_index = bad_index.union(rows)
+
+    print("\n" + "!" * 70)
+    print(f"WARNING: skipping {len(bad_index):,} of {len(input_data):,} row(s) "
+          "with missing required annotation(s)")
+    for feature, rows in sorted(gaps.items()):
+        print(f"  {feature}: {len(rows):,} row(s) (first: {list(rows[:5])})")
+    print("  Every real stop-gain variant has these by construction, so a gap")
+    print("  usually means the annotation step failed for that row.")
+    print(f"  {len(input_data) - len(bad_index):,} row(s) will be analyzed.")
+    print("!" * 70)
+
+    kept = input_data.drop(index=bad_index)
+    if kept.empty:
+        raise ValueError(
+            "Every input row is missing a required annotation; nothing left to "
+            "analyze. Check the annotation step."
+        )
+    return kept
 
 def prepare_model_features(
     input_data,
@@ -774,10 +844,10 @@ def calculate_mechanism_probabilities(escape_contributions):
     n_prob = probs[:, 0]
     c_prob = probs[:, 1]
     
-    # Handle edge case: both mechanisms promote trigger (both negative)
-    both_negative = (n_contrib < 0) & (c_contrib < 0)
-    n_prob[both_negative] = 0.5
-    c_prob[both_negative] = 0.5
+    # Handle edge case: both mechanisms promote trigger (neither positive)
+    neither_positive = (n_contrib <= 0) & (c_contrib <= 0)
+    n_prob[neither_positive] = 0.5
+    c_prob[neither_positive] = 0.5
 
     # No downstream in-frame AUG means N-terminal rescue is impossible. The softmax
     # compares n - c, so a zeroed N contribution would beat any negative C
@@ -825,6 +895,65 @@ def calculate_nt_ct_classification(escape_contributions):
         'has_nt_ct_mechanisms': total_nt_ct_escape > 0
     }
 
+# Probability bands used to qualify an N/C terminal call as confident or uncertain.
+MECHANISM_CONFIDENT_THRESHOLD = 0.8
+MECHANISM_UNCERTAIN_THRESHOLD = 0.5
+
+def refine_mechanism_classification(classification, n_prob, c_prob):
+    """Qualify each mechanism call with a confidence suffix.
+
+    n_prob > 0.8              -> N_terminal_confident
+    0.5 < n_prob <= 0.8       -> N_terminal_uncertain
+    c_prob > 0.8              -> C_terminal_confident
+    0.5 < c_prob <= 0.8       -> C_terminal_uncertain
+
+    The two probabilities are a softmax over two classes and sum to 1, so at most
+    one of them can exceed 0.5. The bands therefore pick both the side and the
+    confidence on their own, and the N and C rules can never fire on the same row.
+
+    A row where neither probability clears 0.5 keeps its existing label. With the
+    guard in calculate_mechanism_probabilities testing <= 0, that is exactly the
+    set the base call already labels 'Uncertain', so the refinement is purely
+    additive: no row changes its side, it only gains a confidence suffix.
+    """
+    # Cast to object first: the incoming array is fixed-width unicode and the
+    # suffixed labels are longer than the originals.
+    classification = np.asarray(classification, dtype=object)
+    n_prob = np.asarray(n_prob, dtype=float)
+    c_prob = np.asarray(c_prob, dtype=float)
+
+    refined = classification.copy()
+    qualified = np.zeros(classification.shape, dtype=bool)
+
+    for label, prob in (('N_terminal', n_prob), ('C_terminal', c_prob)):
+        valid = np.isfinite(prob)
+
+        confident = valid & (prob > MECHANISM_CONFIDENT_THRESHOLD)
+        uncertain = (valid
+                     & (prob > MECHANISM_UNCERTAIN_THRESHOLD)
+                     & (prob <= MECHANISM_CONFIDENT_THRESHOLD))
+
+        refined = np.where(confident, f'{label}_confident', refined)
+        refined = np.where(uncertain, f'{label}_uncertain', refined)
+        qualified |= confident | uncertain
+
+    n_unqualified = int((~qualified).sum())
+    if n_unqualified:
+        print(f"  Note: {n_unqualified} row(s) kept their base label - neither "
+              f"probability exceeded {MECHANISM_UNCERTAIN_THRESHOLD}")
+
+    # Consistency check. A base 'Uncertain' means both contributions were <= 0,
+    # which the neither_positive guard in calculate_mechanism_probabilities pins
+    # to 0.5/0.5 - so no 'Uncertain' row should ever clear 0.5 and gain a side.
+    # A nonzero count here means the two functions have drifted apart.
+    was_uncertain = np.asarray(classification == 'Uncertain', dtype=bool)
+    n_uncertain_qualified = int((was_uncertain & qualified).sum())
+    if n_uncertain_qualified:
+        print(f"  WARNING: {n_uncertain_qualified} 'Uncertain' row(s) were given a "
+              f"side - classification and probability logic disagree")
+
+    return refined
+
 def create_output_data_minimal(input_data, shap_results, escape_contributions, separate_features=False):
     """Create output dataframe with analysis results
     
@@ -848,12 +977,18 @@ def create_output_data_minimal(input_data, shap_results, escape_contributions, s
     nt_ct_results = calculate_nt_ct_classification(escape_contributions)
     mech_probs = calculate_mechanism_probabilities(escape_contributions)
     
+    refined_classification = refine_mechanism_classification(
+        nt_ct_results['mechanism_classification'],
+        mech_probs['n_terminal_probability'],
+        mech_probs['c_terminal_probability'],
+    )
+    
     # Add mechanism classification and probabilities - only for NMD escape cases
     is_escape = shap_results['escape_predictions'] > 0.5
     
     mechanism_classification = np.where(
         is_escape,
-        nt_ct_results['mechanism_classification'],
+        refined_classification,
         None
     )
     
@@ -1035,6 +1170,9 @@ def main():
         
         print("\nLoading input data...")
         input_data = load_input_data(args.input_file)
+        
+        # Filter before anything else touches input_data
+        input_data = drop_rows_missing_required(input_data)
         
         print("\nDefining feature groups...")
         feature_groups = define_feature_groups()
