@@ -1615,7 +1615,7 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
     vep_df = parse_vcf_csq_format(args.vep_file)
     
     if vep_df.empty:
-        print("No relevant data found after pre-filtering")
+        print("No relevant data found after pre-filtering", file=sys.stderr)
         sys.exit(1)
     
     print(f"After pre-filtering: {len(vep_df)} annotations to process")
@@ -1656,9 +1656,24 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
     missing_cols = [col for col in required_cols if col not in vep_df.columns]
     
     if missing_cols or not has_transcript_col or not has_allele_col:
-        print(f"Error: Required columns missing or not found")
-        print(f"Available columns: {list(vep_df.columns)}")
+        problems = []
+        for col in missing_cols:
+            if col == 'CANONICAL':
+                problems.append(
+                    "CANONICAL (required by --canonical; re-run VEP with --canonical, "
+                    "or drop the flag / set canonical_only: false)"
+                )
+            else:
+                problems.append(col)
+        if not has_transcript_col:
+            problems.append("a transcript column ('Feature' or 'transcript_id')")
+        if not has_allele_col:
+            problems.append("an allele column ('Allele' or 'ALT_ALLELE')")
+
+        print("Error: VEP output is missing required column(s): " + "; ".join(problems),file=sys.stderr)
+        print(f"Available columns: {list(vep_df.columns)}",file=sys.stderr)
         sys.exit(1)
+    
     
     has_biotype = 'BIOTYPE' in vep_df.columns
     if not has_biotype:
