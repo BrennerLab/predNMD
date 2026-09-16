@@ -1624,13 +1624,14 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
     af_column = None
     if args.af_col:
         # User specified a column
-        if args.af_col in vep_df.columns:
-            af_column = args.af_col
-            print(f"Using user-specified AF column: '{af_column}'")
-        else:
-            print(f"WARNING: Specified AF column '{args.af_col}' not found in VEP output")
-            print(f"Available columns: {list(vep_df.columns)}")
-            print("AF column will not be included")
+        if args.af_col not in vep_df.columns:
+            print(f"Error: specified AF column '{args.af_col}' not found in VEP output",
+                  file=sys.stderr)
+            print(f"Available columns: {list(vep_df.columns)}", file=sys.stderr)
+            sys.exit(1)
+        af_column = args.af_col
+        print(f"Using user-specified AF column: '{af_column}'")
+     
     else:
         # Auto-detect: try gnomAD_AF first, then gnomADg_AF
         if 'gnomAD_AF' in vep_df.columns:
@@ -1640,8 +1641,9 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
             af_column = 'gnomADg_AF'
             print(f"Auto-detected AF column: '{af_column}'")
         else:
-            print("No AF column found (tried 'gnomAD_AF' and 'gnomADg_AF')")
-            print("AF column will not be included in output")
+            print("Error: no allele-frequency column found (tried 'gnomAD_AF' and 'gnomADg_AF'. AF is a model feature, so prediction cannot run without it: re-run VEP with gnomAD frequencies enabled --af_gnomad, or name the column explicitly with --af-col.",file=sys.stderr)
+            print(f"Available columns: {list(vep_df.columns)}", file=sys.stderr)
+            sys.exit(1)
     
     has_af_col = af_column is not None
     
