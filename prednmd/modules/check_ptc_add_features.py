@@ -430,14 +430,27 @@ class TranscriptAnnotation:
         return genomic_to_transcript
 
 
-def parse_gtf(gtf_file):
-    """Parse GTF file to extract transcript annotations with frame information"""
+GTF_ATTR_RE = re.compile(r'(\w+)\s+"([^"]+)"')
+
+
+def parse_gtf(gtf_file, needed_ids=None):
+    """Parse GTF file to extract transcript annotations with frame information.
+    If needed_ids (unversioned transcript IDs) is given, all other transcripts are skipped."""
     transcripts = {}
     
     with gzip.open(gtf_file, 'rt') if gtf_file.endswith('.gz') else open(gtf_file, 'r') as f:
         for line in f:
             if line.startswith('#'):
                 continue
+            
+            if needed_ids is not None:
+                # Cheap string check before any splitting or regex
+                i = line.find('transcript_id "')
+                if i < 0:
+                    continue
+                j = line.find('"', i + 15)
+                if line[i + 15:j].split('.')[0] not in needed_ids:
+                    continue
             
             fields = line.strip().split('\t')
             if len(fields) < 9:
@@ -451,13 +464,7 @@ def parse_gtf(gtf_file):
             else:
                 frame = int(frame)
             
-            attr_dict = {}
-            for attr in attributes.split(';'):
-                attr = attr.strip()
-                if attr:
-                    match = re.search(r'(\w+)\s+"([^"]+)"', attr)
-                    if match:
-                        attr_dict[match.group(1)] = match.group(2)
+            attr_dict = dict(GTF_ATTR_RE.findall(attributes))
             
             if 'transcript_id' not in attr_dict:
                 continue
@@ -498,33 +505,19 @@ def load_m6a_sites_by_gene(m6a_file):
     """Load m6A sites and group them by gene ID."""
     print("Loading m6A sites and grouping by gene...")
     m6a_df = pd.read_csv(m6a_file, sep='\t')
+    processed_sites = len(m6a_df)
     
-    # Dictionary to store m6A sites by gene ID
+    # Drop sites without a gene ID, then sort once by position (stable, so ties keep file order)
+    m6a_df = m6a_df[m6a_df['Ensembl_ID'].notna() & (m6a_df['Ensembl_ID'] != '')]
+    m6a_df = m6a_df.sort_values('start', kind='stable')
+    
+    # Dictionary to store m6A sites by gene ID (already in position order)
     gene_m6a = defaultdict(list)
-    
-    processed_sites = 0
-    
-    for _, row in m6a_df.iterrows():
-        processed_sites += 1
-        
-        # Extract gene ID and genomic position
-        gene_id = row.get('Ensembl_ID', '')
-        chrom = row['seqnames']
-        genomic_pos = int(row['start'])
-        
-        # Skip if no gene ID
-        if not gene_id:
-            continue
-        
-        # Store genomic position for this gene
+    for gene_id, chrom, genomic_pos in zip(m6a_df['Ensembl_ID'], m6a_df['seqnames'], m6a_df['start'].astype(int)):
         gene_m6a[gene_id].append({
             'chromosome': chrom,
             'genomic_pos': genomic_pos
         })
-    
-    # Sort positions for each gene
-    for gene_id in gene_m6a:
-        gene_m6a[gene_id].sort(key=lambda x: x['genomic_pos'])
     
     print(f"Processed {processed_sites} m6A sites")
     print(f"Found m6A sites for {len(gene_m6a)} genes")
@@ -727,6 +720,10 @@ def find_variant_induced_ptc(original_seq, modified_seq, variant_cds_pos):
 def apply_variant_to_sequence(ref_seq, variant_pos, ref_allele, alt_allele, suppress_warnings=False):
     """Apply variant to sequence and return modified sequence"""
     pos_0based = variant_pos - 1
+    if not ref_allele:
+        # Insertion: VEP's CDS_position N-(N+1) means between bases N and N+1, so insert after base N
+        pos_0based = variant_pos
+
     
     if ref_allele and ref_seq[pos_0based:pos_0based+len(ref_allele)] != ref_allele:
         if not suppress_warnings:
@@ -1202,7 +1199,8 @@ def process_vep_line(row, transcripts, genome_fasta, cds_sequences=None, stop_co
         except (ValueError, TypeError):
             cds_span = None
     
-    if len(ref_allele) == 1 and len(alt_allele) > 1:
+    vcf_alt_alleles = (safe_extract_value(row, 'ALT_ALLELE') or '').split(',')
+    if len(ref_allele) == 1 and (len(alt_allele) > 1 or ref_allele + alt_allele in vcf_alt_alleles):
         # INSERTION: VCF has REF=single base (anchor)
         # VEP Allele has the inserted sequence only (anchor stripped)
         ref_allele = ''  # Empty after stripping anchor
@@ -1561,8 +1559,22 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
     vep_format = detect_vep_format(args.vep_file)
     print(f"Detected format: {vep_format}")
     
+    print("Reading and pre-filtering VEP output file...")
+    
+    # Parse VCF format only (before the GTF, so only the transcripts it mentions are loaded)
+    vep_df = parse_vcf_csq_format(args.vep_file)
+    
+    if vep_df.empty:
+        print("No relevant data found after pre-filtering", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"After pre-filtering: {len(vep_df)} annotations to process")
+    
+    tx_col = 'Feature' if 'Feature' in vep_df.columns else 'transcript_id' if 'transcript_id' in vep_df.columns else None
+    needed_ids = {str(t).split('.')[0] for t in vep_df[tx_col]} if tx_col else None
+    
     print("Loading GTF annotations...")
-    transcripts = parse_gtf(args.gtf)
+    transcripts = parse_gtf(args.gtf, needed_ids)
     print(f"Loaded {len(transcripts)} transcripts")
     
     print("Loading genome FASTA...")
@@ -1609,16 +1621,6 @@ Note: dis_to_first_inframeAUG and dis_to_first_outframeAUG are set to 100000 whe
         print("      - PTC verification will still be PERFORMED for frameshift variants")
         print("      - Other validation checks (biotype, chromosome, CDS bounds) are still enforced")
     
-    print("Reading and pre-filtering VEP output file...")
-    
-    # Parse VCF format only
-    vep_df = parse_vcf_csq_format(args.vep_file)
-    
-    if vep_df.empty:
-        print("No relevant data found after pre-filtering", file=sys.stderr)
-        sys.exit(1)
-    
-    print(f"After pre-filtering: {len(vep_df)} annotations to process")
     
     # Determine which AF column to use
     af_column = None
