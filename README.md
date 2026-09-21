@@ -106,6 +106,16 @@ runtime:
                        # one variant could correspond to multiple transcripts.
 ```
 
+## Test Run
+To check that predNMD is installed and configured correctly, a small test file is provided at `test/test_input.vep_annotated.vcf`. It contains 20 stop-gain SNVs from the Genome in a Bottle (GIAB) HG001/NA12878 high-confidence small-variant benchmark callset (GRCh38, v4.2.1; Wagner et al. 2022). The variants were pre-annotated with Ensembl VEP (release 104, with canonical-transcript flags and gnomAD allele frequencies), so VEP, bcftools and bedtools are not needed for this test.
+
+The variants are on GRCh38, so `config.yaml` must point to GRCh38 files: the Ensembl GRCh38 reference files, the hg38 phyloP bigWig, and `data/hg38_m6A-Atlas_highRes_all.txt.gz`. Then run:
+
+```bash
+prednmd run -i test_input.vep_annotated.vcf -o test_output -s test -c /path/to/config.yaml
+```
+
+A successful run writes `test_output/test.with_predictions.txt` and `test_output/test.NMDannot.vcf` (see [Output Files](#output-files)).
 
 ## Quick Start
 
