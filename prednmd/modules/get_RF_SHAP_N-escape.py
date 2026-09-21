@@ -902,9 +902,9 @@ MECHANISM_UNCERTAIN_THRESHOLD = 0.5
 def refine_mechanism_classification(classification, n_prob, c_prob):
     """Qualify each mechanism call with a confidence suffix.
 
-    n_prob > 0.8              -> N_terminal_confident
+    n_prob > 0.8              -> N_terminal_likely
     0.5 < n_prob <= 0.8       -> N_terminal_uncertain
-    c_prob > 0.8              -> C_terminal_confident
+    c_prob > 0.8              -> C_terminal_likely
     0.5 < c_prob <= 0.8       -> C_terminal_uncertain
 
     The two probabilities are a softmax over two classes and sum to 1, so at most
@@ -933,7 +933,7 @@ def refine_mechanism_classification(classification, n_prob, c_prob):
                      & (prob > MECHANISM_UNCERTAIN_THRESHOLD)
                      & (prob <= MECHANISM_CONFIDENT_THRESHOLD))
 
-        refined = np.where(confident, f'{label}_confident', refined)
+        refined = np.where(confident, f'{label}_likely', refined)
         refined = np.where(uncertain, f'{label}_uncertain', refined)
         qualified |= confident | uncertain
 
