@@ -31,6 +31,28 @@ predNMD requires several annotation files. Download and configure paths in `conf
 5. Ensembl reference genome (FASTA), reference GTF, and reference CDS (FASTA) (can be downloaded with download_data.py)
 6. Pre-trained Random Forest model (included in /model)
 
+You can get items 1–5 in either of two ways, then set their paths in `config.yaml` (see [Configuration](#configuration)).
+ 
+#### Option 1: download all reference files from Dryad
+ 
+All reference files used to develop and validate predNMD, for both GRCh37 and GRCh38, are archived on Dryad as a single zip file: <https://doi.org/10.5061/dryad.w3r228185>. Download `predNMD_ref_data.zip` from the Dryad page and unzip it:
+ 
+```bash
+unzip predNMD_ref_data.zip
+```
+ 
+```
+predNMD_ref_data/
+├── gnomad.v4.1.constraint_metrics.tsv
+├── GTEx_mean_expression_per_gene.csv
+├── GRCh37/   # Ensembl release 87 genome, GTF, and CDS; hg19 phyloP and m6A files
+└── GRCh38/   # Ensembl release 104 genome, GTF, and CDS; hg38 phyloP and m6A files
+```
+ 
+#### Option 2: download individual files with `download_data.py`
+
+`download_data.py` lets you download only the files you need, e.g., for a single assembly:
+
 ```bash
 # To see what datasets are available for download:
 python download_data.py --list
